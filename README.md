@@ -1,2 +1,2 @@
 # Supersonic
-A minimal DAW
+A minimal and fast DAW
