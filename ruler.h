@@ -1,12 +1,18 @@
 #pragma once
 #include "header.h"
 #include "platform.h"
+#include "globalState.h"
 
 START_SCOPE(ruler)
 
-void paintWindow(HWND window);
-void createGridWindow(HWND window);
-void handleResize(HWND window, LPARAM lParam);
-LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
+struct State
+{
+    int x;
+    int y;
+    int height;
+    int padding;
+};
+
+void create(HWND parent, HWND* child);
 
 END_SCOPE

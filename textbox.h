@@ -4,8 +4,10 @@
 
 START_SCOPE(textbox)
 
-void create(HWND window, String* text, int width);
-void paintWindow(HWND window);
-LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
+struct State
+{
+    String* name;
+};
+void create(HWND window, HWND* textBox);
 
 END_SCOPE

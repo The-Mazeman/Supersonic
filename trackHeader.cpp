@@ -1,11 +1,15 @@
 #include "header.h"
-#include "platform.h"
-#include "globalState.h"
 #include "trackHeader.h"
-#include "textbox.h"
 
 START_SCOPE(trackHeader)
 
+LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
+
+void create(HWND window, HWND* trackHeader)
+{
+	createWindowClass(L"trackHeaderWindowClass", windowCallback);
+	createChildWindow(L"trackHeaderWindowClass", window, trackHeader);
+}
 void paintWindow(HWND window)
 {
 	PAINTSTRUCT paintStruct;
@@ -18,29 +22,26 @@ void paintWindow(HWND window)
 
 	EndPaint(window, &paintStruct);
 }
-void create(HWND window, String* name, int trackNumber, int width,  HWND* trackHeaderHandle)
-{
-	HWND trackHeader;
-	createLayer(L"trackHeaderWindowClass", window, &trackHeader);
-	*trackHeaderHandle = trackHeader;
-
-	int height = globalState.trackHeight;
-	int y = trackNumber * height;
-	MoveWindow(trackHeader, 0, y, width, height, 1);
-
-	textbox::create(trackHeader, name, width);
-	++globalState.trackCount;
-}
 void handleResize(HWND window, LPARAM lParam)
 {
 	int width = LOWORD(lParam);
 	int height = globalState.trackHeight;
 	resizeWindow(window, width, height);
 }
+void initialize(HWND window)
+{
+	HWND textBox;
+	textbox::create(window, &textBox);
+}
 LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 {
 	switch (message)
 	{
+		case WM_CREATE:
+		{
+			initialize(window);
+			break;
+		}
 		case WM_PAINT:
 		{
 			paintWindow(window);

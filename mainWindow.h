@@ -1,8 +1,15 @@
 #pragma once
 #include "header.h"
 #include "platform.h"
+#include "globalState.h"
+#include "topbar.h"
+#include "ruler.h"
+#include "clipArea.h"
+#include "sidebar.h"
+#include "waveFile.h"
+#include "audioEngine.h"
 
-START_SCOPE(main)
+START_SCOPE(mainWindow)
 
 struct State
 {
@@ -13,9 +20,9 @@ struct State
 	HWND audioEngine;
 
 	int playing;
-	int padding;
+	uint trackCount;
 };
 
-LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
+void create();
 
 END_SCOPE

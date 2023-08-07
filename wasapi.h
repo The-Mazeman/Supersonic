@@ -2,6 +2,8 @@
 #include "header.h"
 #include "platform.h"
 #include "waveFile.h"
+#include "globalState.h"
+#include "bus.h"
 
 START_SCOPE(wasapi)
 
@@ -25,18 +27,21 @@ struct State
 	IAudioClock* audioClock;
 
 	Header format;
-	HANDLE loadEvent;
+	HANDLE outputLoadEvent;
+	HANDLE inputLoadEvent;
 	HANDLE audioCallback;
-	HANDLE exitSemaphore;
+	HANDLE inputExitEvent;
+	HANDLE inputFinishSemaphore;
+	HANDLE exitLoader;
 
 	uint64 endpointDeviceFrequency;
 	uint bufferFrameCount;
-	uint exitCount;
+	uint inputFinishCount;
 
-	RingBuffer outputBuffer;
+	RingBuffer endpointBuffer;
 	HWND cursor;
+	HWND busArray[3];
 };
 
-LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
-
+void create(HWND window, HWND* wasapi);
 END_SCOPE

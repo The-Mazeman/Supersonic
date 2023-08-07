@@ -1,23 +1,18 @@
 #pragma once
 #include "header.h"
 #include "platform.h"
-#include "audioClip.h"
 #include "globalState.h"
+
 
 START_SCOPE(audioTrack)
 
 struct State
-{	
-	AudioClip* clipList[5];
-	RingBuffer* busBuffer;
-	HANDLE loadEvent;
-	HANDLE exitSemaphore;
-	uint* finishCount;
-
+{	Loader loader;
+	AudioClip clipList[4];
 	uint clipCount;
-	uint trackCount;
+	uint padding;
 };
 
-LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
+void create(HWND window, HWND* audioTrack);
 
 END_SCOPE

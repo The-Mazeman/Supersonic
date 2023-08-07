@@ -13,6 +13,10 @@ void createThread(LPTHREAD_START_ROUTINE startRoutine, LPVOID parameter, DWORD* 
 {
 	HANDLE threadHandle = CreateThread(0, 0, startRoutine, parameter, 0, threadId);
 	assert(threadHandle != 0);
+    if(threadHandle)
+    {
+        CloseHandle(threadHandle);
+    }
 }
 void createEvent(BOOL manualResetRequired, HANDLE* handle)
 {
@@ -50,7 +54,7 @@ void getProcessHeap(HANDLE* handle)
 		*handle = processHeapHandle;
 	}
 }
-void allocateSmallMemory(uint64 size, char** memory)
+void allocateSmallMemory(uint64 size, void** memory)
 {
 	HANDLE processHeapHandle;
 	getProcessHeap(&processHeapHandle);
@@ -128,6 +132,12 @@ void createWindowClass(const WCHAR* className, WNDPROC callbackFunction)
 	getModuleHandle(&windowInstance);
 
 	WNDCLASSEX windowClass = {};
+    BOOL result = GetClassInfoExW(windowInstance, className, &windowClass);
+    if(result != 0)
+    {
+        return;
+    }
+
 	windowClass.cbSize = sizeof(WNDCLASSEX);
 	windowClass.style = 0;
 	windowClass.lpfnWndProc = callbackFunction;
@@ -144,35 +154,32 @@ void createWindowClass(const WCHAR* className, WNDPROC callbackFunction)
 	ATOM windowClassAtom = RegisterClassEx(&windowClass);
 	assert(windowClassAtom != 0);
 }
-void createWindow(const WCHAR* className, HWND* window)
+void createWindow(const WCHAR* className, int width, int height, HWND* window)
 {
 	HINSTANCE windowInstance;
 	getModuleHandle(&windowInstance);
 
-	HWND windowHandle = CreateWindowEx(0, className, L"", WS_OVERLAPPEDWINDOW, 0, 0, 0, 0, 0, 0, windowInstance, 0);
+    DWORD style = WS_VISIBLE | WS_OVERLAPPEDWINDOW;
+	HWND windowHandle = CreateWindowEx(0, className, L"", style, CW_USEDEFAULT, CW_USEDEFAULT, width, height, 0, 0, windowInstance, 0);
 	assert(windowHandle != 0);
-	*window = windowHandle;
+    if(window)
+    {
+        *window = windowHandle;
+    }
 }
 void createChildWindow(const WCHAR* className, HWND parentHandle, HWND* window)
 {
 	HINSTANCE windowInstance;
 	getModuleHandle(&windowInstance);
 
-	HWND windowHandle = CreateWindowEx(0, className, L"", WS_CHILD, 0, 0, 0, 0, parentHandle, 0, windowInstance, 0);
+    DWORD style = WS_VISIBLE | WS_CHILD;
+	HWND windowHandle = CreateWindowEx(0, className, L"", style, 0, 0, 0, 0, parentHandle, 0, windowInstance, 0);
 	assert(windowHandle != 0);
 	*window = windowHandle;
 }
-void createLayer(const WCHAR* className, HWND parentHandle, HWND* window)
+void placeWindow(HWND window, int x, int y, int width, int height)
 {
-	HWND windowHandle;
-	createChildWindow(className, parentHandle, &windowHandle);
-	assert(windowHandle != 0);
-	ShowWindow(windowHandle, SW_SHOW);
-
-	if(window)
-	{
-		*window = windowHandle;
-	}
+    MoveWindow(window, x, y, width, height, 1);
 }
 void getRect(RECT* rectangle, int* left, int* top, int* right, int* bottom)
 {
@@ -331,7 +338,7 @@ void zoomWindow(HWND window, LPARAM oldFramesPerPixel)
 	MoveWindow(window, x, y, width, height, 0);
 	InvalidateRect(window, 0, 0);
 }
-void drawMarking(HDC deviceContext, RECT* invalidRectangle)
+void drawMarking(HDC deviceContext, RECT* invalidRectangle, int offsetX)
 {
 	HFONT font = CreateFont(15, 0, 0, 0, 0, 0, 0, 0, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
 	SelectObject(deviceContext, font);
@@ -341,54 +348,53 @@ void drawMarking(HDC deviceContext, RECT* invalidRectangle)
 	SetTextColor(deviceContext, COLOR_WHITE);
 
 	sint64 framesPerPixel = globalState.framesPerPixel;
-	int framesPerMarking = globalState.sampleRate;
+	int framesPerMarking = (int)globalState.sampleRate;
 
 	int pixelsPerMarking = (int)(framesPerMarking / framesPerPixel);
-	int left = invalidRectangle->left;
-	int right = invalidRectangle->right;
+	int left = invalidRectangle->left - offsetX;
+	int right = invalidRectangle->right - offsetX;
 	int leftMarking = left / pixelsPerMarking;
 	int rightMarking = right / pixelsPerMarking;
 
 	WCHAR marking[4] = {};
 	for (int i = leftMarking; i != rightMarking + 1; ++i)
 	{
-		int x = (i * pixelsPerMarking);
+		int x = (i * pixelsPerMarking) + offsetX;
 		wsprintf(marking, L"%d", i);
 		int stringLength = (int)wcslen(marking);
 		TextOut(deviceContext, x + 4, 0, marking, stringLength);
 	}
 	DeleteObject(font);
 }
-void drawGrid(HDC deviceContext, RECT* invalidRectangle, int height)
+void drawGrid(HDC deviceContext, RECT* invalidRectangle, int offsetX)
 {
 	sint64 framesPerPixel = globalState.framesPerPixel;
-	int framesPerMarking = globalState.sampleRate;
+	int framesPerMarking = (int)globalState.sampleRate;
 
-	int left = invalidRectangle->left;
-	int right = invalidRectangle->right;
+	int left = invalidRectangle->left - offsetX;
+	int right = invalidRectangle->right - offsetX;
+
 
 	int pixelsPerMarking = (int)(framesPerMarking / framesPerPixel);
 	int leftMarking = left / pixelsPerMarking;
 	int rightMarking = right / pixelsPerMarking;
+    int top = invalidRectangle->top;
+    int bottom = invalidRectangle->bottom;
 
 	for (int i = leftMarking; i != rightMarking + 1; ++i)
 	{
-		int x = (i * pixelsPerMarking);
-		MoveToEx(deviceContext, x, 0, 0);
-		LineTo(deviceContext, x, height);
+		int x = (i  * pixelsPerMarking) + offsetX;
+		MoveToEx(deviceContext, x, top, 0);
+		LineTo(deviceContext, x, bottom);
 	}
 }
-void getFileCount(HDROP drop, uint* count)
+void getFileCount(WPARAM wParam, uint* count)
 {
+    HDROP drop = (HDROP)wParam;
 	UINT magic = 0xffffffff;
 	*count = DragQueryFile(drop, magic, 0, 128);
 }
-void getFilePath(WPARAM wParam, WCHAR* filePath, uint index)
-{
-	HDROP drop = (HDROP)wParam;
-	DragQueryFile(drop, index, filePath, 256);
-}
-void checkIfWaveFile(WCHAR* filePath, uint64 stringLength)
+void checkExtension(WCHAR* filePath, uint64 stringLength)
 {
 	WCHAR v = L'v';
 	WCHAR lastCharacter = *(filePath + stringLength - 1);
@@ -396,6 +402,13 @@ void checkIfWaveFile(WCHAR* filePath, uint64 stringLength)
 	{
 		*filePath = 0;
 	}
+}
+void getFilePath(WPARAM wParam, WCHAR* filePath, uint index)
+{
+	HDROP drop = (HDROP)wParam;
+	DragQueryFile(drop, index, filePath, 256);
+    uint64 stringLength = wcslen(filePath);
+    checkExtension(filePath, stringLength);
 }
 void horizontalScroll(HWND window, LPARAM lParam)
 {
@@ -425,4 +438,21 @@ void getTrackNumber(HWND window, int* trackNumber, int height)
 
 	int cursorY = cursor.y;
 	*trackNumber = (cursorY / height);
+}
+void boundCheck(RingBuffer* ringBuffer, void** bufferPointer, uint offset)
+{
+	char* bufferStart = ringBuffer->start + offset;
+	char* bufferEnd = ringBuffer->end + offset;
+	if (*bufferPointer == bufferEnd)
+	{
+		*bufferPointer = bufferStart;
+	}
+}
+void checkCompletion(uint* inputFinishCount, uint trackCount, HANDLE inputSemaphore)
+{
+	while (*inputFinishCount != trackCount)
+	{
+		WaitForSingleObject(inputSemaphore, INFINITE);
+	}
+	*inputFinishCount = 0;
 }

@@ -1,55 +1,84 @@
 #include "header.h"
-#include "platform.h"
-#include "rulerGrid.h"
-#include "globalState.h"
+#include "ruler.h"
 
 START_SCOPE(ruler)
 
-void paintWindow(HWND window)
+LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
+
+void create(HWND parent, HWND* child)
+{
+
+	createWindowClass(L"rulerWindowClass", windowCallback);
+	createChildWindow(L"rulerWindowClass", parent, child);
+}
+void paintWindow(State* state, HWND window)
 {
 	PAINTSTRUCT paintStruct;
 	HDC deviceContext = BeginPaint(window, &paintStruct);
 
+    SelectObject(deviceContext, GetStockObject(DC_PEN));
+	SetDCPenColor(deviceContext, COLOR_WHITE);
+
 	RECT* invalidRectangle = &paintStruct.rcPaint;
-	rectangleFill(deviceContext, invalidRectangle, COLOR_RED);
+	rectangleFill(deviceContext, invalidRectangle, COLOR_BLACK);
+
+	int left = invalidRectangle->left;
+	int right = invalidRectangle->right;
+	int height = state->height;
+	MoveToEx(deviceContext, left, height - 1, 0);
+	LineTo(deviceContext, right, height - 1);
+
+    int offsetX = globalState.offsetX;
+    invalidRectangle->bottom = height / 2;
+	drawGrid(deviceContext, invalidRectangle, offsetX);
+	drawMarking(deviceContext, invalidRectangle, offsetX);
 
 	EndPaint(window, &paintStruct);
 }
-void createGridWindow(HWND window)
+void handleResize(State* state, HWND window, WPARAM wParam)
 {
-	createWindowClass(L"rulerGridWindowClass", rulerGrid::windowCallback);
-	createLayer(L"rulerGridWindowClass", window, 0);
-}
-void handleResize(HWND window, WPARAM wParam)
-{
-	POINT* parent = (POINT*)wParam;
-	int width = parent->x - globalState.sidebarWidth;
-	int height = globalState.rulerHeight;
+    int x = state->x;
+    int y = state->y;
 
-	resizeWindow(window, width, height);
+	POINT* parent = (POINT*)wParam;
+	int width = parent->x - state->x;
+	int height = state->height;
+
+    placeWindow(window, x, y, width, height);
+}
+void initialize(HWND window)
+{
+	State* state = {};
+	allocateSmallMemory(sizeof(State), (void**)&state);
+	SetProp(window, L"state", state);
+
+	state->x = globalState.sidebarWidth;
+	state->y = globalState.topbarHeight;
+	state->height = globalState.rulerHeight;
 }
 LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 {
+	State* state = (State*)GetProp(window, L"state");
 	switch (message)
 	{
 		case WM_CREATE:
 		{
-			createGridWindow(window);
+			initialize(window);
 			break;
 		}
 		case WM_PAINT:
 		{
-			paintWindow(window);
+			paintWindow(state, window);
 			break;
 		}
 		case WM_SIZE:
 		{
-			handleWindowSizeChanged(window, lParam);
+			//handleWindowSizeChanged(window, lParam);
 			break;
 		}
 		case WM_RESIZE:
 		{
-			handleResize(window, wParam);
+			handleResize(state, window, wParam);
 			break;
 		}
 		case WM_NCHITTEST:

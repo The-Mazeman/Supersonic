@@ -1,16 +1,15 @@
 #pragma once
 #include "header.h"
 #include "platform.h"
+#include "globalState.h"
 
 START_SCOPE(timelineCursor)
 
 struct State
 {
 	int x;
-	int padding;
-	uint64 endpointDeviceFrequency;
-	IAudioClock* audioClock;
+    int y;
 };
-LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 
+void create(HWND parent, HWND* timelineCursor);
 END_SCOPE

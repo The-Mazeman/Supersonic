@@ -4,15 +4,21 @@
 struct GlobalState
 {
 	sint64 framesPerPixel;
-	int sampleRate;
-	int trackCount;
+
 	int trackHeight;
 	int rulerHeight;
+
 	int sidebarWidth;
 	int topbarHeight;
-	uint audioFrameCount;
-	uint readCursor;
+
+    int offsetX;
+    int offsetY;
+
+	uint sampleRate;
+	uint trackCount;
+
+	uint audioEndpointFrameCount;
+	int padding;
+	uint64 readCursor;
 };
 extern GlobalState globalState;
-
-void initializeGlobalState();

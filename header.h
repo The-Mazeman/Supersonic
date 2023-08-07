@@ -1,7 +1,10 @@
 #pragma once
+
 #pragma warning(disable: 5045)
+#if 0
 #pragma warning(disable: 4100)
 #pragma warning(disable: 4189)
+#endif
 
 #define WIN32_LEAN_AND_MEAN  
 #define CINTERFACE  
@@ -58,19 +61,28 @@
 #define END_SCOPE }
 
 #define WM_RESIZE 0x8001
+#define WM_PLAY 0x8002
+#define WM_PAUSE 0x8003
+#define WM_STARTLOADER 0x8004
+#define WM_FILEDROP 0x8005
+#define WM_CREATETRACK 0x8006
+#define WM_ASSIGNBUS 0x8007
+#define WM_MOVECURSOR 0x8008
+#define WM_GETCURSOR 0x8009
+#if 0
 #define WM_HORIZONTALMOUSEWHEEL 0x8002
 #define WM_VERTICALMOUSEWHEEL 0x8003
 #define WM_PINCHZOOM 0x8004
-#define WM_FILEDROP 0x8005
-#define WM_CREATETRACK 0x8006
 #define WM_SETTIMER 0x8007
 #define WM_TOGGLEPLAYBACK 0x8008
-#define WM_STARTLOADER 0x8009
 #define WM_SETCALLBACK 0x800a
 #define WM_MOVECURSOR 0x800b
-#define WM_PLAY 0x800c
-#define WM_PAUSE 0x800d
 #define WM_GETOUTPUT 0x800e
+#define WM_SETOUTPUT 0x8010
+#endif
+
+
+#define AVX2_FRAME_SIZE 32
 
 
 struct String
@@ -82,6 +94,50 @@ struct RingBuffer
 {
 	char* start;
 	char* end;
+};
+
+struct Loader
+{
+	RingBuffer buffer;
+	HANDLE loadEvent;
+	HANDLE exitSemaphore;
+	HANDLE finishSemaphore;
+	uint* finishCount;
+
+	uint trackCount;
+	uint trackNumber;
+
+};
+struct Header
+{
+	uint16 type;
+	uint16 channelCount;
+	uint32 sampleRate;
+	uint32 byteRate;
+	uint16 blockAlign;
+	uint16 bitDepth;
+};
+struct WaveFile
+{
+	Header header;
+	uint64 frameCount;
+	float* sampleChunk;
+	String name;
+};
+struct AudioClip
+{
+	uint64 startFrame;
+	uint64 endFrame;
+	uint startOffset;
+	uint endOffset;
+
+	int x;
+	int width;
+	void* start;
+	uint64 frameCount;
+	uint64 id;
+	WaveFile waveFile;
+	float* waveformChunk;
 };
 
 

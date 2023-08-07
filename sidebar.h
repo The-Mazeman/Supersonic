@@ -1,10 +1,22 @@
 #pragma once
 #include "header.h"
 #include "platform.h"
+#include "globalState.h"
+#include "trackHeader.h"
 
 START_SCOPE(sidebar)
 
-LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
+struct State
+{
+    int x;
+    int y;
+    int width;
+    int padding;
+
+    HWND trackHeaderArray[16];
+};
+
+void create(HWND parent, HWND* child);
 
 END_SCOPE
 

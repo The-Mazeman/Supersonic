@@ -1,7 +1,6 @@
 #pragma once
 #include "header.h"
 #include "platform.h"
-#include "audioClip.h"
 #include "audioTrack.h"
 #include "wasapi.h"
 #include "globalState.h"
@@ -14,19 +13,18 @@ struct State
 	IAudioRenderClient* renderClient;
 
 	HANDLE loadEvent;
+	HANDLE endLoaderEvent;
 	HANDLE exitSemaphore;
 	HANDLE busSemaphore;
 	
 	RingBuffer endpointBuffer;
-	RingBuffer* outputBuffer;
 
-	HWND audioTrackArray[4];
-	HANDLE trackLoadEvent[3];
+	HWND audioTrackArray[16];
+	HANDLE trackLoadEvent[16];
 	HWND timelineCursor;
-	int timelineCursorX;
-	int padding;
+	sint64 timelineCursorX;
 };
 
-LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
+void create(HWND window, HWND* audioEngine);
 
 END_SCOPE

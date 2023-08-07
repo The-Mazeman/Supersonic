@@ -1,28 +1,14 @@
 #include "header.h"
-#include "platform.h"
 #include "audioClip.h"
-#include "waveform.h"
-#include "globalState.h"
 
 START_SCOPE(audioClip)
 
-void create(HWND window, AudioClip* audioClip, int trackNumber)
+LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
+
+void create(HWND window, HWND* audioClip)
 {
-	sint64 framesPerPixel = globalState.framesPerPixel;
-	uint64 frameCount = audioClip->waveFile.frameCount;
-	int width = (int)(frameCount / (uint64)framesPerPixel);
-	audioClip->width = width;
-
-	int height = globalState.trackHeight;
-	int y = trackNumber * height;
-	int x = audioClip->x;
-
-	HWND audioClipWindow;
-	createLayer(L"audioClipWindowClass", window, &audioClipWindow);
-	int bitDepth = audioClip->waveFile.header.bitDepth;
-
-	SendMessage(audioClipWindow, WM_FILEDROP, (WPARAM)&audioClip->waveFile, bitDepth);
-	MoveWindow(audioClipWindow, x, y, width + 2, height, 1);
+	createWindowClass(L"audioClipWindowClass", windowCallback);
+	createChildWindow(L"audioClipWindowClass", window, audioClip);
 }
 void paintWindow(HWND window)
 {
@@ -30,14 +16,9 @@ void paintWindow(HWND window)
 	HDC deviceContext = BeginPaint(window, &paintStruct);
 
 	RECT* invalidRectangle = &paintStruct.rcPaint;
-	rectangleFill(deviceContext, invalidRectangle, COLOR_WHITE);
+	rectangleFrame(deviceContext, invalidRectangle, COLOR_WHITE);
 
 	EndPaint(window, &paintStruct);
-}
-void handleAudioClipDrop(HWND window, LPARAM lParam)
-{
-	AudioClip* audioClip = (AudioClip*)lParam;
-	SetProp(window, L"audioClip", audioClip);
 }
 LRESULT handleHitTesting(HWND window, LPARAM lParam)
 {
@@ -64,21 +45,8 @@ void handleMoving(HWND window, LPARAM lParam)
 	getWindowPosition(window, &x, &y);
 	windowRectangle->top = y;
 	windowRectangle->bottom = y + globalState.trackHeight;
-
 }
-void handleFileDrop(HWND window, WPARAM wParam, LPARAM lParam)
-{
-	switch(lParam)
-	{
-		case 16:
-		{
-			WaveFile* waveFile = (WaveFile*)wParam;
-			short* sampleChunk = (short*)waveFile->sampleChunk;
-			waveform::create(window, waveFile, sampleChunk);
-		}
-	}
-}
-void handleSize(HWND window, LPARAM lParam)
+void resizeChild(HWND window, LPARAM lParam)
 {
 	HWND child = GetWindow(window, GW_CHILD);
 	SendMessage(child, WM_RESIZE, 0, lParam);
@@ -94,8 +62,8 @@ LRESULT handleClientPreservation(WPARAM wParam, LPARAM lParam)
 	RECT* oldRectangle = newRectangle + 1;
 	LRESULT result = {};
 
-	int startOffsetDelta = newRectangle->right - oldRectangle->right;
-	int endOffsetDelta = oldRectangle->left -  newRectangle->left;
+	//int startOffsetDelta = newRectangle->right - oldRectangle->right;
+	//int endOffsetDelta = oldRectangle->left -  newRectangle->left;
 
 
 	if (newRectangle->right == oldRectangle->right)
@@ -104,16 +72,38 @@ LRESULT handleClientPreservation(WPARAM wParam, LPARAM lParam)
 	}
 	return result;
 }
+#if 0
 void handleSizing(WPARAM wParam, LPARAM lParam)
 {
 	if(wParam == WMSZ_LEFT)
 	{
 	}
 }
+#endif
+void handleFileDrop(State* state, HWND window, WPARAM wParam)
+{
+	AudioClip* audioClip = (AudioClip*)wParam;
+	state->audioClip = audioClip;
+	HWND waveform;
+	waveform::create(window, &waveform);
+	SendMessage(waveform, WM_FILEDROP, (WPARAM)&audioClip->waveFile, 0);
+}
+void initialize(HWND window)
+{
+	State* state = {};
+	allocateSmallMemory(sizeof(State), (void**)&state);
+	SetProp(window, L"state", state);
+}
 LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 {
+	State* state = (State*)GetProp(window, L"state");
 	switch (message)
 	{
+		case WM_CREATE:
+		{
+			initialize(window);
+			break;
+		}
 		case WM_PAINT:
 		{
 			paintWindow(window);
@@ -121,7 +111,7 @@ LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 		}
 		case WM_FILEDROP:
 		{
-			handleFileDrop(window, wParam, lParam);
+			handleFileDrop(state, window, wParam);
 			break;
 		}
 		case WM_MOVING:
@@ -139,11 +129,11 @@ LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 		}
 		case WM_SIZING:
 		{
-			handleSizing(wParam, lParam);
+			//handleSizing(wParam, lParam);
 		}
 		case WM_SIZE:
 		{
-			handleSize(window, lParam);
+			resizeChild(window, lParam);
 			break;
 		}
 	}

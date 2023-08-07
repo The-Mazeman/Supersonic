@@ -2,24 +2,14 @@
 #include "header.h"
 #include "platform.h"
 #include "waveFile.h"
-
-struct AudioClip
-{
-	uint64 startFrame;
-	uint64 endFrame;
-	uint startOffset;
-	uint endOffset;
-
-	int x;
-	int width;
-	void* start;
-	uint64 frameCount;
-	WaveFile waveFile;
-};
+#include "globalState.h"
+#include "waveform.h"
 
 START_SCOPE(audioClip)
-
-void create(HWND window, AudioClip* audioClip, int trackNumber);
-LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
+struct State
+{
+	AudioClip* audioClip;
+};
+void create(HWND window, HWND* audioClip);
 
 END_SCOPE

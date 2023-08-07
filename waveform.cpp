@@ -1,12 +1,9 @@
 #include "header.h"
-#include "platform.h"
 #include "waveform.h"
-#include "globalState.h"
-
-#define WAVEFORM_BYTE_DEPTH 1
-#define WAVEFORM_BIT_DEPTH 8
 
 START_SCOPE(waveform)
+
+LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 
 void drawMirroredSample(HDC deviceContext, int x, int y, int sampleHeight)
 {
@@ -18,169 +15,82 @@ void drawSingleSample(HDC deviceContext, int x, int y, int sampleHeight)
 	MoveToEx(deviceContext, x, y, 0);
 	LineTo(deviceContext, x, y - sampleHeight);
 }
-void getMaximumAVX2Frame(char** waveFileFramePointer, uint64 frameCount, __m256i* max)
+void create(HWND window, HWND* waveform)
 {
-	uint framesPerIteration = 32 / 2;
+	createWindowClass(L"waveformWindowClass", windowCallback);
+	createChildWindow(L"waveformWindowClass", window, waveform);
+}
+void getMaximumAVX2Frame(float** waveFileFramePointer, uint64 frameCount, __m256* max)
+{
+	uint framesPerIteration = 4;
 	uint64 iterationCount = frameCount / framesPerIteration;
-
-	__m256i a = {};
-	__m256i* framePointer = (__m256i*) * waveFileFramePointer;
-
-	for (uint64 j = 0; j != iterationCount; ++j)
+	__m256* sample = (__m256*) * waveFileFramePointer;
+	for (uint64 i = 0; i != iterationCount; ++i)
 	{
-		a = _mm256_load_si256(framePointer);
-		*max = _mm256_max_epi8(a, *max);
-		++framePointer;
+		*max = _mm256_max_ps(*sample, *max);
+		++sample;
 	}
-	*waveFileFramePointer = (char*)framePointer;
+	*waveFileFramePointer = (float*)sample;
 }
-void getMaximumFrame(char** waveFileFramePointer, uint64 frameCount, char* maxFrame)
+void getMaximumFrame(float** waveFileFramePointer, uint64 frameCount, float* maxFrame)
 {
-	__m256i max = {};
+	__m256 max = {};
+	float sumLeft = {};
+	float sumRight = {};
 	getMaximumAVX2Frame(waveFileFramePointer, frameCount, &max);
-
-	__m256i a = {};
-	a = _mm256_permute2x128_si256(max, max, 1);
-	max = _mm256_max_epi8(a, max);
-	a = _mm256_permute4x64_epi64(max, 1);
-	max = _mm256_max_epi8(a, max);
-	a = _mm256_permutevar8x32_epi32(max, _mm256_set_epi32(0, 0, 0, 0, 0, 0, 0, 1));
-	max = _mm256_max_epi8(a, max);
-	a = _mm256_shufflelo_epi16(max, 1);
-	max = _mm256_max_epi8(a, max);
-
-	maxFrame[0] = max.m256i_i8[0];
-	maxFrame[1] = max.m256i_i8[1];
-}
-void getMaximumAVX2Frame(short** waveFileFramePointer, uint64 frameCount, __m256i* max)
-{
-	uint framesPerIteration = 32 / 4;
-	uint64 iterationCount = frameCount / framesPerIteration;
-
-	__m256i a = {};
-	__m256i* framePointer = (__m256i*) * waveFileFramePointer;
-	for (uint64 j = 0; j != iterationCount; ++j)
+	for(uint i = 0; i != 4; ++i)
 	{
-		a = _mm256_load_si256(framePointer);
-		*max = _mm256_max_epi16(a, *max);
-		++framePointer;
+		sumLeft += max.m256_f32[i];
+		sumRight += max.m256_f32[i + 1];
 	}
-	*waveFileFramePointer = (short*)framePointer;
+	sumLeft /= 4;
+	sumRight /= 4;
+	maxFrame[0] = sumLeft;
+	maxFrame[1] = sumRight;
+
 }
-void getMaximumFrame(short** waveFileFramePointer, uint64 frameCount, short* maxFrame)
-{
-	__m256i max = {};
-	getMaximumAVX2Frame(waveFileFramePointer, frameCount, &max);
-
-	__m256i a = {};
-	a = _mm256_permute2x128_si256(max, max, 1);
-	max = _mm256_max_epi16(a, max);
-	a = _mm256_permute4x64_epi64(max, 1);
-	max = _mm256_max_epi16(a, max);
-	a = _mm256_permutevar8x32_epi32(max, _mm256_set_epi32(0, 0, 0, 0, 0, 0, 0, 1));
-	max = _mm256_max_epi16(a, max);
-
-	_mm_storeu_si32(maxFrame, _mm256_castsi256_si128(max));
-}
-void calculateLastFrame(short** waveFilePointer, uint endFrameCount, short* maxFrame)
-{
-	getMaximumFrame(waveFilePointer, endFrameCount, maxFrame);
-	uint leftOverFrameCount = endFrameCount % 8;
-	short* waveFramePointer = (short*)*waveFilePointer;
-	for (uint i = 0; i != leftOverFrameCount; ++i)
-	{
-		if (*waveFramePointer > maxFrame[0])
-		{
-			maxFrame[0] = *waveFramePointer;
-		}
-		++waveFramePointer;
-		if (*waveFramePointer > maxFrame[1])
-		{
-			maxFrame[1] = *waveFramePointer;
-		}
-		++waveFramePointer;
-	}
-}
-void reduceFrameCount(short* waveFile, char* waveform, uint64 waveFrameCount, uint64 waveformFrameCount)
-{
-	uint endBlockFrameCount = waveFrameCount % FRAMES_TO_AVERAGE;
-	short maxFrame[2] = {};
-	for (uint64 i = 0; i != waveformFrameCount - 1; ++i)
-	{
-		getMaximumFrame(&waveFile, FRAMES_TO_AVERAGE, maxFrame);
-		*waveform = maxFrame[0] >> 8;
-		++waveform;
-		*waveform = maxFrame[1] >> 8;
-		++waveform;
-	}
-	calculateLastFrame(&waveFile, endBlockFrameCount, maxFrame);
-	*waveform = maxFrame[0] >> 8;
-	++waveform;
-	*waveform = maxFrame[1] >> 8;
-	++waveform;
-}
-void calculateWaveform(WaveFile* waveFile, short* sampleChunk, char** waveformChunk)
-{
-	uint channelCount = waveFile->header.channelCount;
-	uint64 frameCount = waveFile->frameCount;
-
-	uint64 reducedFrameCount = (frameCount / FRAMES_TO_AVERAGE);
-	++reducedFrameCount;
-
-	uint waveformFrameSize = (uint)(channelCount * WAVEFORM_BYTE_DEPTH);
-	uint64 waveformChunkSize = reducedFrameCount * waveformFrameSize;
-
-	allocateSmallMemory(waveformChunkSize, waveformChunk);
-
-	reduceFrameCount(sampleChunk, *waveformChunk, frameCount, reducedFrameCount);
-}
-void drawWaveformAverage(HDC deviceContext, RECT* invalidRectangle, char* waveform)
+void drawWaveformAverage(HDC deviceContext, RECT* invalidRectangle, float* waveform)
 {
 	int x0 = invalidRectangle->left;
 	int x1 = invalidRectangle->right;
 
-	int height = invalidRectangle->bottom;
+	int height = globalState.trackHeight;
 	int centerY = height / 2;
-
-	int maximumSampleHeight = centerY;
-	int maximumSampleValue = SCHAR_MAX;
 
 	sint64 framesPerPixel = globalState.framesPerPixel / FRAMES_TO_AVERAGE;
 	sint64 frameOffset = x0 * framesPerPixel;
 	waveform += frameOffset * 2;
 
-	float scaleFactor = (float)maximumSampleHeight / (float)maximumSampleValue;
+	float scaleFactor = (float)centerY;
 
 	for (int i = x0; i != x1; ++i)
 	{
-		char maxFrame[2] = {};
+		float maxFrame[2] = {};
 		getMaximumFrame(&waveform, (uint64)framesPerPixel, maxFrame);
 
-		int sampleHeight = (int)((float)maxFrame[0] / scaleFactor);
+		int sampleHeight = (int)(maxFrame[0] / scaleFactor);
 		drawMirroredSample(deviceContext, i, centerY, sampleHeight);
 	}
 }
-void drawWaveform(HDC deviceContext, RECT* invalidRectangle, short* wavefile)
+void drawWaveform(HDC deviceContext, RECT* invalidRectangle, float* waveFile)
 {
 	int x0 = invalidRectangle->left;
 	int x1 = invalidRectangle->right;
 
-	int height = invalidRectangle->bottom;
+	int height = globalState.trackHeight;
 	int centerY = height / 2;
-	int maximumSampleHeight = centerY;
-	int maximumSampleValue = SHRT_MAX;
-	float scaleFactor = (float)maximumSampleHeight / (float)maximumSampleValue;
+	float scaleFactor = (float)centerY;
 
 	sint64 framesPerPixel = globalState.framesPerPixel;
 	sint64 frameOffset = x0 * framesPerPixel;
-	wavefile += frameOffset * 2;
+	waveFile += frameOffset * 2;
 
 	for (int i = x0; i != x1; ++i)
 	{
-		short maxFrame[2] = {};
-		getMaximumFrame(&wavefile, (uint64)framesPerPixel, maxFrame);
+		float maxFrame[2] = {};
+		getMaximumFrame(&waveFile, (uint64)framesPerPixel, maxFrame);
 
-		int sampleHeight = (int)((float)maxFrame[0] * scaleFactor);
+		int sampleHeight = (int)(maxFrame[0] * scaleFactor);
 		drawMirroredSample(deviceContext, i, centerY, sampleHeight);
 	}
 }
@@ -190,54 +100,37 @@ void handleResize(HWND window, LPARAM lParam)
 	int height = HIWORD(lParam) - 2;
 	MoveWindow(window, 1, 1, width, height, 1);
 }
-void create(HWND parent, WaveFile* waveFile, short* sampleChunk)
+void paintWindow(State* state, HWND window)
 {
-	HWND waveformWindow;
-	createLayer(L"int16WaveformWindowClass", parent, &waveformWindow);
+	if(state->waveFile.sampleChunk == 0)
+	{
+		return;
+	}
 
-	char* waveformChunk;
-	calculateWaveform(waveFile, sampleChunk, &waveformChunk);
-
-	SetProp(waveformWindow, L"sampleChunk", sampleChunk);
-	SetProp(waveformWindow, L"waveformChunk", waveformChunk);
-}
-START_SCOPE(int16)
-
-void paintWindow(HWND window)
-{
 	PAINTSTRUCT paintStruct;
 	HDC deviceContext = BeginPaint(window, &paintStruct);
 
 	RECT* invalidRectangle = &paintStruct.rcPaint;
-	rectangleFill(deviceContext, invalidRectangle, COLOR_RED);
-
-	int width, height;
-	getWindowDimension(window, &width, &height);
-	invalidRectangle->bottom = height;
-
+	rectangleFill(deviceContext, invalidRectangle, COLOR_BLACK);
 	sint64 framesPerPixel = globalState.framesPerPixel;
 
 	SelectObject(deviceContext, GetStockObject(DC_PEN));
 	SetDCPenColor(deviceContext, COLOR_WHITE);
-	State* state = (State*)GetProp(window, L"state");
-	int startOffset = state->startOffset;
 
 	if (framesPerPixel > FRAMES_TO_AVERAGE)
 	{
-		char* waveform = (char*)GetProp(window, L"waveformChunk");
-		waveform += startOffset * framesPerPixel * 2;
+		float* waveform = state->waveform;
 		drawWaveformAverage(deviceContext, invalidRectangle, waveform);
 	}
 	else
 	{
-		short* sampleChunk = (short*)GetProp(window, L"sampleChunk");
-		sampleChunk += startOffset * framesPerPixel * 2;
+		float* sampleChunk = state->waveFile.sampleChunk;
 		drawWaveform(deviceContext, invalidRectangle, sampleChunk);
 	}
 
 	EndPaint(window, &paintStruct);
 }
-LRESULT handleClientPreservation(HWND window, WPARAM wParam, LPARAM lParam)
+LRESULT handleClientPreservation(WPARAM wParam, LPARAM lParam)
 {
 	if (!wParam)
 	{
@@ -247,37 +140,75 @@ LRESULT handleClientPreservation(HWND window, WPARAM wParam, LPARAM lParam)
 	RECT* newRectangle = parameter->rgrc;
 	RECT* oldRectangle = newRectangle + 1;
 	LRESULT result = {};
-	State* state = (State*)GetProp(window, L"state");
 	if (newRectangle->right == oldRectangle->right)
 	{
 
-		int delta =  newRectangle->left - oldRectangle->left;
-		state->startOffset += delta;
+		//int delta =  newRectangle->left - oldRectangle->left;
+		//state.startOffset += delta;
 
 		result = WVR_ALIGNRIGHT;
 	}
 	return result;
 }
-void createState(HWND window)
+void reduceFrameCount(float* waveFile, float* waveform, uint64 waveformFrameCount)
 {
-	State* state;
-	allocateSmallMemory(sizeof(State), (char**)&state);
-	state->startOffset = 0;
-	state->endOffset = 0;
+	float maxFrame[2] = {};
+	for (uint64 i = 0; i != waveformFrameCount; ++i)
+	{
+		getMaximumFrame(&waveFile, FRAMES_TO_AVERAGE, maxFrame);
+		*waveform = maxFrame[0];
+		++waveform;
+		*waveform = maxFrame[1];
+		++waveform;
+	}
+}
+void createWaveformData(State* state)
+{
+	uint64 frameCount = state->waveFile.frameCount;
+	uint64 reducedFrameCount = (frameCount / FRAMES_TO_AVERAGE);
+
+	uint channelCount = state->waveFile.header.channelCount;
+	uint waveformFrameSize = sizeof(float) * channelCount;
+	uint64 waveformChunkSize = reducedFrameCount * waveformFrameSize;
+
+	float* waveformChunk = {};
+	allocateSmallMemory(waveformChunkSize, (void**)&waveformChunk);
+	state->waveform = waveformChunk;
+
+	float* sampleChunk = state->waveFile.sampleChunk;
+	reduceFrameCount(sampleChunk, waveformChunk, reducedFrameCount);
+}
+void initialize(HWND window)
+{
+	State* state = {};
+	allocateSmallMemory(sizeof(State), (void**)&state);
 	SetProp(window, L"state", state);
+	state->waveFile.sampleChunk = 0;
+}
+void handleFileDrop(State* state, WPARAM wParam)
+{
+	WaveFile* waveFile = (WaveFile*)wParam;
+	state->waveFile = *waveFile;
+    createWaveformData(state);
 }
 LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 {
+	State* state = (State*)GetProp(window, L"state");
 	switch (message)
 	{
 		case WM_CREATE:
 		{
-			createState(window);
+			initialize(window);
 			break;
 		}
 		case WM_PAINT:
 		{
-			paintWindow(window);
+			paintWindow(state, window);
+			break;
+		}
+		case WM_FILEDROP:
+		{
+			handleFileDrop(state, wParam);
 			break;
 		}
 		case WM_RESIZE:
@@ -287,7 +218,7 @@ LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 		}
 		case WM_NCCALCSIZE:
 		{
-			return handleClientPreservation(window, wParam, lParam);
+			return handleClientPreservation(wParam, lParam);
 		}
 		case WM_NCHITTEST:
 		{
@@ -299,5 +230,4 @@ LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 
 END_SCOPE
 
-END_SCOPE
 

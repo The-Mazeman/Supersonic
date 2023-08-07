@@ -3,122 +3,93 @@
 
 START_SCOPE(audioEngine)
 
-void createState(HWND window)
-{
-	State* state = {};
-	allocateSmallMemory(sizeof(State), (char**)&state);
-	SetProp(window, L"state", state);
+LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 
-	createWindowClass(L"audioTrackWindowClass", audioTrack::windowCallback);
+void create(HWND window, HWND* audioEngine)
+{
+    createWindowClass(L"audioEngineWindowClass", windowCallback);
+    createChildWindow(L"audioEngineWindowClass", window, audioEngine);
 }
-#if 0
-
-void handleFileDrop(HWND window, WPARAM wParam, LPARAM lParam)
+void setCursor(State* state, WPARAM wParam)
 {
-	State* state = (State*)GetProp(window, L"state");
-	int trackNumber = (int)lParam;
-	DWORD trackThreadId = state->trackThreadArray[trackNumber];
-	PostThreadMessage(trackThreadId, WM_FILEDROP, wParam, 0);
-}
-void createTrack(HWND window, LPARAM lParam)
-{
-	State* state = (State*)GetProp(window, L"state");
-	AudioTrack* audioTrack;
-	allocateSmallMemory(sizeof(AudioTrack), (char**)&audioTrack);
-	audioTrack->clipCount = 0;
-	audioTrack->clipList = 0;
-
-	int trackNumber = (int)lParam;
-
-	HANDLE loadEvent;
-	createEvent(0, &loadEvent);
-	audioTrack->loadEvent = loadEvent;
-	audioTrack->busSemaphore = state->busSemaphore;
-	state->trackLoadEvent[trackNumber] = loadEvent;
-
-	DWORD trackThreadId;
-	createThread(trackThread, audioTrack, &trackThreadId);
-	state->trackThreadArray[trackNumber] = trackThreadId;
-
-	WaitForSingleObject(loadEvent, INFINITE);
-}
-#endif
-
-void setCursor(HWND window, WPARAM wParam)
-{
-	State* state = (State*)GetProp(window, L"state");
 	HWND wasapi = state->wasapi;
 	SendMessage(wasapi, WM_SETCURSOR, wParam, 0);
 }
-void createWasapiController(HWND window)
+void startPlayback(State* state)
 {
-	HWND wasapi;
-	createWindowClass(L"wasapiWindowClass", wasapi::windowCallback);
-	createChildWindow(L"wasapiWindowClass", window, &wasapi);
-
-	State* state = (State*)GetProp(window, L"state");
-	state->wasapi = wasapi;
-}
-void startPlayback(HWND window)
-{
-	State* state = (State*)GetProp(window, L"state");
 	HWND wasapi = state->wasapi;
-	SendMessage(wasapi, WM_GETOUTPUT, (WPARAM)&state->outputBuffer, (LPARAM)&state->loadEvent);
+	SendMessage(wasapi, WM_STARTLOADER, 0, 0);
 	SendMessage(wasapi, WM_PLAY, 0, 0);
 }
-void stopPlayback(HWND window)
+void stopPlayback(State* state)
 {
-	State* state = (State*)GetProp(window, L"state");
 	HWND wasapi = state->wasapi;
 	SendMessage(wasapi, WM_PAUSE, 0, 0);
 }
-void createTrack(HWND window, LPARAM lParam)
+void createTrack(State* state, HWND window, WPARAM wParam)
 {
-	State* state = (State*)GetProp(window, L"state");
+    uint trackNumber = (uint)wParam;
+    HWND audioTrack;
+    audioTrack::create(window, &audioTrack);
+    state->audioTrackArray[trackNumber] = audioTrack;
+}
+void handleFileDrop(State* state, WPARAM wParam, LPARAM lParam)
+{
 	int trackNumber = (int)lParam;
+	HWND audioTrack = state->audioTrackArray[trackNumber];
+	SendMessage(audioTrack, WM_FILEDROP, wParam, 0);
+}
+void assignBus(State* state, WPARAM wParam, LPARAM lParam)
+{
+	HWND wasapi = state->wasapi;
+	SendMessage(wasapi, WM_ASSIGNBUS, wParam, lParam);
+}
+void initialize(HWND window)
+{
+	State* state = {};
+	allocateSmallMemory(sizeof(State), (void**)&state);
+	SetProp(window, L"state", state);
 
-	HWND audioTrack;
-	createChildWindow(L"audioTrackWindowClass", window, &audioTrack);
-	state->audioTrackArray[trackNumber] = audioTrack;
+    wasapi::create(window, &state->wasapi);
 }
 LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 {
+	State* state = (State*)GetProp(window, L"state");
 	switch (message)
 	{
-		case WM_CREATE:
-		{
-			createState(window);
-			createWasapiController(window);
-			break;
-		}
+        case WM_CREATE:
+        {
+            initialize(window);
+            break;
+        }
 		case WM_PLAY:
 		{
-			startPlayback(window);
+			startPlayback(state);
 			break;
 		}
 		case WM_PAUSE:
 		{
-			stopPlayback(window);
+			stopPlayback(state);
 			break;
 		}
 		case WM_SETCURSOR:
 		{
-			setCursor(window, wParam);
-			break;
-		}
-		case WM_TIMER:
-		{
-			//handleTimer(window);
+			setCursor(state, wParam);
 			break;
 		}
 		case WM_CREATETRACK:
 		{
-			createTrack(window, lParam);
+			createTrack(state, window, wParam);
 			break;
 		}
 		case WM_FILEDROP:
 		{
-			//handleFileDrop(window, wParam, lParam);
+			handleFileDrop(state, wParam, lParam);
+			break;
+		}
+		case WM_ASSIGNBUS:
+		{
+			assignBus(state, wParam, lParam);
 			break;
 		}
 	}

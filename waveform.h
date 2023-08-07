@@ -2,6 +2,7 @@
 #include "header.h"
 #include "platform.h"
 #include "waveFile.h"
+#include "globalState.h"
 
 START_SCOPE(waveform)
 
@@ -9,13 +10,10 @@ struct State
 {
 	int startOffset;
 	int endOffset;
+    WaveFile waveFile;
+    float* waveform;
 };
-void create(HWND parent, WaveFile* waveFile, short* sampleChunk);
 
-START_SCOPE(int16)
-
-LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
-
-END_SCOPE
+void create(HWND window, HWND* waveform);
 
 END_SCOPE

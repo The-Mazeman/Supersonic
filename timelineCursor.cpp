@@ -1,11 +1,15 @@
 #include "header.h"
-#include "platform.h"
-#include "wasapi.h"
 #include "timelineCursor.h"
-#include "globalState.h"
 
 START_SCOPE(timelineCursor)
 
+LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
+
+void create(HWND parent, HWND* timelineCursor)
+{
+	createWindowClass(L"timelineCursorWindowClass", windowCallback);
+	createChildWindow(L"timelineCursorWindowClass", parent, timelineCursor);
+}
 void paintWindow(HWND window)
 {
 	PAINTSTRUCT paintStruct;
@@ -16,20 +20,20 @@ void paintWindow(HWND window)
 
 	EndPaint(window, &paintStruct);
 }
-void handleResize(HWND window, LPARAM lParam)
+void handleResize(State* state, HWND window, LPARAM lParam)
 {
+    int x = state->x;
+    int y = state->y;
 	int width = 1;
 	int height = HIWORD(lParam);
-	resizeWindow(window, width, height);
+	placeWindow(window, x, y, width, height);
 }
-void handleTimer(HWND window, LPARAM lParam)
+void handleTimer(State* state, HWND window, WPARAM wParam)
 {
-	State* state = (State*)GetProp(window, L"state");
-	
-	sint64 timeElapsedInMilliseconds = lParam;
-	sint64 sampleRateInMilliseconds = globalState.sampleRate / 1000;
-	sint64 framePosition = timeElapsedInMilliseconds * sampleRateInMilliseconds;
-	sint64 framesPerPixel = globalState.framesPerPixel;
+	uint64 timeElapsedInMilliseconds = (uint)wParam;
+	uint64 sampleRateInMilliseconds = (uint)globalState.sampleRate / 1000;
+	uint64 framePosition = timeElapsedInMilliseconds * sampleRateInMilliseconds;
+	uint64 framesPerPixel = (uint)globalState.framesPerPixel;
 	int pixelsElapsed = (int)(framePosition / framesPerPixel);
 
 	int x = state->x;
@@ -37,30 +41,33 @@ void handleTimer(HWND window, LPARAM lParam)
 
 	int width, height;
 	getWindowDimension(window, &width, &height);
-	MoveWindow(window, x, 0, width, height, 1);
+	placeWindow(window, x, 0, width, height);
 }
-void createState(HWND window)
-{
-	State* state = {};
-	allocateSmallMemory(sizeof(State), (char**)&state);
-	SetProp(window, L"state", state);
-}
-void setCursorPosition(HWND window)
+void setCursorPosition(State* state, HWND window)
 {
 	int x, y;
 	getWindowPosition(window, &x, &y);
 	mapToParent(window, &x, &y);
 
-	State* state = (State*)GetProp(window, L"state");
 	state->x = x;
+}
+void initialize(HWND window)
+{
+	State* state = {};
+	allocateSmallMemory(sizeof(State), (void**)&state);
+	SetProp(window, L"state", state);
+
+	state->x = 0;
+	state->y = 0;
 }
 LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 {
+	State* state = (State*)GetProp(window, L"state");
 	switch (message)
 	{
 		case WM_CREATE:
 		{
-			createState(window);
+			initialize(window);
 			break;
 		}
 		case WM_PAINT:
@@ -70,17 +77,17 @@ LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 		}
 		case WM_PLAY:
 		{
-			setCursorPosition(window);
+			setCursorPosition(state, window);
 			break;
 		}
 		case WM_RESIZE:
 		{
-			handleResize(window, lParam);
+			handleResize(state, window, lParam);
 			break;
 		}
 		case WM_TIMER:
 		{
-			handleTimer(window, lParam);
+			handleTimer(state, window, wParam);
 			break;
 		}
 		case WM_NCHITTEST:

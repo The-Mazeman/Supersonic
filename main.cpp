@@ -1,30 +1,28 @@
 #include "header.h"
-#include "platform.h"
-#include "globalState.h"
-#include "mainWindow.h"
-#include "topbar.h"
+#include "main.h"
 
-void setupWindow()
+void initializeState()
 {
-	createWindowClass(L"mainWindowClass", main::windowCallback);
-    HWND window; 
-	createWindow(L"mainWindowClass", &window);
-
-    SetWindowTheme(window, L"", L"");
-	DragAcceptFiles(window, 1);
-	MoveWindow(window, 0, 0, WINDOW_WIDTH, WINDOW_HEIGHT, 0);
-	ShowWindow(window, SW_SHOW);
+	globalState.framesPerPixel = 512;
+	globalState.sampleRate = 48000;
+	globalState.trackCount = 0;
+	globalState.trackHeight = 128;
+	globalState.rulerHeight = 16;
+	globalState.sidebarWidth = 128;
+	globalState.topbarHeight = 16;
+	globalState.offsetX = 0;
+	globalState.offsetY = 0;
 }
 int WINAPI wWinMain(_In_ HINSTANCE windowInstance, _In_opt_ HINSTANCE previousInstance, _In_ LPWSTR arguments, _In_ int showState)
 {
-    notUsing(previousInstance);
-    notUsing(arguments);
-    notUsing(showState);
-    notUsing(windowInstance);
-
-	initializeGlobalState();
-    setupWindow();
+	notUsing(previousInstance);
+	notUsing(arguments);
+	notUsing(showState);
+	notUsing(windowInstance);
+	
+    initializeState();
+    mainWindow::create();
     startMessageLoop();
 
-	return 0;   
+	return 0;
 }
