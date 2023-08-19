@@ -3,6 +3,7 @@
 #include "platform.h"
 #include "audioTrack.h"
 #include "wasapi.h"
+#include "trackControl.h"
 #include "globalState.h"
 
 START_SCOPE(audioEngine)
@@ -10,6 +11,7 @@ START_SCOPE(audioEngine)
 struct State
 {
 	HWND wasapi;
+	HWND trackControl;
 	IAudioRenderClient* renderClient;
 
 	HANDLE loadEvent;

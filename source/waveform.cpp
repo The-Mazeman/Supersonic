@@ -15,11 +15,7 @@ void drawSingleSample(HDC deviceContext, int x, int y, int sampleHeight)
 	MoveToEx(deviceContext, x, y, 0);
 	LineTo(deviceContext, x, y - sampleHeight);
 }
-void create(HWND window, HWND* waveform)
-{
-	createWindowClass(L"waveformWindowClass", windowCallback);
-	createChildWindow(L"waveformWindowClass", window, waveform);
-}
+
 void getMaximumAVX2Frame(float** waveFileFramePointer, uint64 frameCount, __m256* max)
 {
 	uint framesPerIteration = 4;
@@ -178,18 +174,15 @@ void createWaveformData(State* state)
 	float* sampleChunk = state->waveFile.sampleChunk;
 	reduceFrameCount(sampleChunk, waveformChunk, reducedFrameCount);
 }
-void initialize(HWND window)
+void create(HWND window, HWND* waveform, WaveFile* waveFile)
 {
 	State* state = {};
 	allocateSmallMemory(sizeof(State), (void**)&state);
-	SetProp(window, L"state", state);
-	state->waveFile.sampleChunk = 0;
-}
-void handleFileDrop(State* state, WPARAM wParam)
-{
-	WaveFile* waveFile = (WaveFile*)wParam;
 	state->waveFile = *waveFile;
-    createWaveformData(state);
+
+	createWaveformData(state);
+	createWindowClass(L"waveformWindowClass", windowCallback);
+	createChildWindow(L"waveformWindowClass", window, waveform, state);
 }
 LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 {
@@ -198,17 +191,12 @@ LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 	{
 		case WM_CREATE:
 		{
-			initialize(window);
+			setState(window, lParam);
 			break;
 		}
 		case WM_PAINT:
 		{
 			paintWindow(state, window);
-			break;
-		}
-		case WM_FILEDROP:
-		{
-			handleFileDrop(state, wParam);
 			break;
 		}
 		case WM_RESIZE:

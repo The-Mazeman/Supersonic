@@ -8,11 +8,10 @@ START_SCOPE(trackHeader)
 
 struct State
 {
-	String name;
-	uint clipCount;
-	int padding;
+	HWND textbox;
+	HWND audioTrack;
 };
 
-void create(HWND window, HWND* trackHeader);
+void create(HWND window, HWND* trackHeader, HWND audioTrack);
 
 END_SCOPE

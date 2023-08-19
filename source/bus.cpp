@@ -7,8 +7,17 @@ LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 
 void create(HWND parent, HWND* bus)
 {
+	State* state = {};
+	allocateSmallMemory(sizeof(State), (void**)&state);
+	state->inputTrackCount = 0;
+	state->inputFinishCount = 0;
+	state->inputBuffer.start = 0;
+
+	createSemaphore(0, 10, &state->inputExitSemaphore);
+	createSemaphore(0, 10, &state->inputFinishSemaphore);
+
 	createWindowClass(L"busWindowClass", windowCallback);
-	createChildWindow(L"busWindowClass", parent, bus);
+	createChildWindow(L"busWindowClass", parent, bus, state);
 }
 void setTrackEvent(HANDLE* eventArray, uint trackCount)
 {
@@ -38,7 +47,7 @@ void load(__m256** input, __m256** output, uint inputTrackCount, uint outputTrac
 			++inputAVX2;
 		}
 		sum = _mm256_mul_ps(sum, scalarAVX2);
-		*outputAVX2 = sum;
+		*outputAVX2 = _mm256_load_ps((float*)&sum);
 		outputAVX2 += outputTrackCount;
 	}
 	*input = inputAVX2;
@@ -49,7 +58,6 @@ DWORD WINAPI loader(LPVOID parameter)
 {
 	State* state = (State*)parameter;
 
-	HANDLE* eventArray = state->inputLoadEventArray;
 
 	uint inputTrackCount = state->inputTrackCount;
 	uint outputTrackCount = state->outputTrackCount;
@@ -63,6 +71,7 @@ DWORD WINAPI loader(LPVOID parameter)
 	__m256* input = (__m256*)state->inputBuffer.start;
 	__m256* output = (__m256*)state->outputBuffer.start;
 
+	HANDLE* eventArray = state->inputLoadEventArray;
 	HANDLE outputLoadEvent = state->outputLoadEvent;
 	HANDLE outputExitEvent = state->outputExitEvent;
 	HANDLE inputExitSemaphore = state->inputExitSemaphore;
@@ -168,20 +177,6 @@ void assignBus(State* state, WPARAM wParam)
 	state->inputLoadEventArray[trackCount] = loadEvent;
 	++state->inputTrackCount;
 }
-
-void initialize(HWND window)
-{
-	State* state = {};
-	allocateSmallMemory(sizeof(State), (void**)&state);
-	SetProp(window, L"state", state);
-
-	state->inputTrackCount = 0;
-	state->inputFinishCount = 0;
-	state->inputBuffer.start = 0;
-
-	createSemaphore(0, 10, &state->inputExitSemaphore);
-	createSemaphore(0, 10, &state->inputFinishSemaphore);
-}
 LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 {
 	State* state = (State*)GetProp(window, L"state");
@@ -189,7 +184,7 @@ LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 	{
 		case WM_CREATE:
 		{
-			initialize(window);
+			setState(window, lParam);
 			break;
 		}
 		case WM_STARTLOADER:

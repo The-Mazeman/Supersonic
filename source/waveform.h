@@ -14,6 +14,6 @@ struct State
     float* waveform;
 };
 
-void create(HWND window, HWND* waveform);
+void create(HWND window, HWND* waveform, WaveFile* waveFile);
 
 END_SCOPE

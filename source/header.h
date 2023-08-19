@@ -17,7 +17,7 @@
 #include <immintrin.h>
 #include <stdint.h>
 #include <limits.h>
-
+#include <math.h>
 
 #include <mmdeviceapi.h>
 #include <audiopolicy.h>
@@ -69,22 +69,18 @@
 #define WM_ASSIGNBUS 0x8007
 #define WM_MOVECURSOR 0x8008
 #define WM_GETCURSOR 0x8009
-#if 0
-#define WM_HORIZONTALMOUSEWHEEL 0x8002
-#define WM_VERTICALMOUSEWHEEL 0x8003
-#define WM_PINCHZOOM 0x8004
-#define WM_SETTIMER 0x8007
-#define WM_TOGGLEPLAYBACK 0x8008
-#define WM_SETCALLBACK 0x800a
-#define WM_MOVECURSOR 0x800b
-#define WM_GETOUTPUT 0x800e
-#define WM_SETOUTPUT 0x8010
-#endif
-
+#define WM_SETDROP 0x800a
+#define WM_SETCONTROL 0x800b
 
 #define AVX2_FRAME_SIZE 32
-
-
+typedef void (*ProcessFunction)(float*, uint, void*);
+struct WindowPosition
+{
+	int x;
+	int y;
+	int width;
+	int height;
+};
 struct String
 {
 	WCHAR* string;
@@ -94,19 +90,6 @@ struct RingBuffer
 {
 	char* start;
 	char* end;
-};
-
-struct Loader
-{
-	RingBuffer buffer;
-	HANDLE loadEvent;
-	HANDLE exitSemaphore;
-	HANDLE finishSemaphore;
-	uint* finishCount;
-
-	uint trackCount;
-	uint trackNumber;
-
 };
 struct Header
 {
@@ -131,13 +114,29 @@ struct AudioClip
 	uint startOffset;
 	uint endOffset;
 
-	int x;
-	int width;
-	void* start;
-	uint64 frameCount;
-	uint64 id;
 	WaveFile waveFile;
-	float* waveformChunk;
+	uint64 frameCount;
+};
+struct AudioEffect
+{
+	ProcessFunction process;
+	void* state;
+};
+struct TrackControl
+{
+	__m256 gain;
+	__m256 pan;
+};
+struct Loader
+{
+	RingBuffer buffer;
+	HANDLE loadEvent;
+	HANDLE exitSemaphore;
+	HANDLE finishSemaphore;
+	uint* finishCount;
+
+	uint trackCount;
+	uint trackNumber;
 };
 
 

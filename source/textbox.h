@@ -6,7 +6,7 @@ START_SCOPE(textbox)
 
 struct State
 {
-    String* name;
+    String name;
 };
 void create(HWND window, HWND* textBox);
 

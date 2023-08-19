@@ -5,10 +5,46 @@ START_SCOPE(mainWindow)
 
 LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 
+void setCursor(State* state)
+{
+	HWND timelineCursor;
+	HWND clipArea = state->clipArea;
+	SendMessage(clipArea, WM_GETCURSOR, (WPARAM)&timelineCursor, 0);
+
+	HWND audioEngine = state->audioEngine;
+	SendMessage(audioEngine, WM_SETCURSOR, (WPARAM)timelineCursor, 0);
+}
+void setAttribute(HWND window)
+{
+	SetWindowTheme(window, L"", L"");
+	DragAcceptFiles(window, 1);
+}
+void createLayout(State* state, HWND window)
+{
+	topbar::create(window, &state->topbar);
+	ruler::create(window, &state->ruler);
+	clipArea::create(window, &state->clipArea);
+	sidebar::create(window, &state->sidebar);
+}
 void create()
 {
+	State* state = {};
+	allocateSmallMemory(sizeof(State), (void**)&state);
+
+	state->playing = 0;
+	state->trackCount = 0;
+
+	HWND window;
     createWindowClass(L"mainWindowClass", windowCallback);
-    createWindow(L"mainWindowClass", WINDOW_WIDTH, WINDOW_HEIGHT, 0);
+    createWindow(L"mainWindowClass", 0, 0, &window, state);
+
+	setAttribute(window);
+	createLayout(state, window);
+
+	audioEngine::create(window, &state->audioEngine);
+	setCursor(state);
+
+	placeWindow(window, 0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
 }
 LRESULT handleHitTesting(HWND window, LPARAM lParam)
 {
@@ -54,7 +90,6 @@ void verticalScroll(State* state, short wheelDelta)
 {
 	HWND sidebar = state->sidebar;
     ScrollWindowEx(sidebar, 0, wheelDelta, 0, 0, 0, 0, SW_INVALIDATE | SW_SCROLLCHILDREN);
-
 }
 void handleMouseVerticalWheel(State* state, WPARAM wParam, LPARAM lParam)
 {
@@ -143,44 +178,6 @@ void handleKeyboardInput(State* state, WPARAM wParam)
         }
     }
 }
-void setAttribute(HWND window)
-{
-    SetWindowTheme(window, L"", L"");
-    DragAcceptFiles(window, 1);
-}
-void createLayout(State* state, HWND window)
-{
-    topbar::create(window, &state->topbar);
-    ruler::create(window, &state->ruler);
-    clipArea::create(window, &state->clipArea);
-    sidebar::create(window,  &state->sidebar);
-}
-void setCursor(State* state)
-{
-    HWND timelineCursor;
-	HWND clipArea = state->clipArea;
-	SendMessage(clipArea, WM_GETCURSOR, (WPARAM)&timelineCursor, 0);
-
-	HWND audioEngine = state->audioEngine;
-    SendMessage(audioEngine, WM_SETCURSOR, (WPARAM)timelineCursor, 0);
-}
-void initialize(HWND window)
-{
-	State* state = {};
-	allocateSmallMemory(sizeof(State), (void**)&state);
-	SetProp(window, L"state", state);
-
-    state->playing = 0;
-    state->trackCount = 0;
-
-	int width, height;
-	getWindowDimension(window, &width, &height);
-    createLayout(state, window);
-
-    setAttribute(window);
-    audioEngine::create(window, &state->audioEngine);
-    setCursor(state);
-}
 void getTrackNumber(State* state, uint* trackNumber)
 {
     POINT cursor;
@@ -195,23 +192,20 @@ void getTrackNumber(State* state, uint* trackNumber)
         *trackNumber = trackCount;
     }
 } 
-void createTrack(State* state, uint trackNumber, uint fileCount)
+void createTrack(State* state, uint newTrackCount)
 {
     uint trackCount = state->trackCount;
-    if(trackNumber + fileCount > trackCount)
+    for(uint i = 0; i != newTrackCount; ++i)
     {
-		uint newTrackCount = trackNumber + fileCount - trackCount;
-        for(uint i = 0; i != newTrackCount; ++i)
-        {
-			HWND sidebar = state->sidebar;
-            SendMessage(sidebar, WM_CREATETRACK, trackCount, 0);
+		HWND audioTrack = {};
+		HWND audioEngine = state->audioEngine;
+        SendMessage(audioEngine, WM_CREATETRACK, trackCount, (LPARAM)&audioTrack);
 
-			HWND audioEngine = state->audioEngine;
-            SendMessage(audioEngine, WM_CREATETRACK, trackCount, 0);
-			++trackCount;
-        }
-        state->trackCount = trackCount;
+		HWND sidebar = state->sidebar;
+        SendMessage(sidebar, WM_CREATETRACK, trackCount, (LPARAM)audioTrack);
+		++trackCount;
     }
+    state->trackCount = trackCount;
 }
 void sendAudioClip(State* state, AudioClip* audioClip, uint trackNumber)
 {
@@ -221,52 +215,118 @@ void sendAudioClip(State* state, AudioClip* audioClip, uint trackNumber)
 	HWND clipArea = state->clipArea;
     SendMessage(clipArea, WM_FILEDROP, (WPARAM)audioClip, trackNumber);
 }
-void getCursorX(State* state, int* x)
+void checkExtension(String* filePath, String* extension)
 {
-    POINT cursor;
-    GetCursorPos(&cursor);
+	WCHAR* pathString = filePath->string;
+	uint64 characterCount = filePath->characterCount;
 
-	HWND clipArea = state->clipArea;
-    ScreenToClient(clipArea, &cursor);
-    *x = cursor.x;
+	pathString += characterCount - 1;
+	const WCHAR* dot = L".";
+	uint extensionCharacterCount = {};
+
+	for(uint64 i = 0; i != characterCount; --i)
+	{
+		if(*pathString == *dot)
+		{
+			break;
+		}
+		--pathString;
+		++extensionCharacterCount;
+	}
+
+	++pathString;
+	WCHAR* extensionString = extension->string;
+
+	for(uint i = 0; i != extensionCharacterCount; ++i)
+	{
+		if(i > extension->characterCount)
+		{
+			break;
+		}
+		if(pathString[i] != extensionString[i])
+		{
+			filePath->characterCount = 0;
+			break;
+		}
+	}
 }
-void prepareClip(AudioClip* audioClip, int x)
+void getFilePathArray(WPARAM wParam, String** filePathArray, uint* fileCount)
+{
+	uint filePathCount;
+	getFileCount(wParam, &filePathCount);
+
+	String* filePath;
+	allocateSmallMemory(sizeof(String) * filePathCount, (void**)&filePath);
+	*filePathArray = filePath;
+	const WCHAR* extensionString = L"wav";
+
+	String extension = {};
+	extension.string = (WCHAR*)extensionString;
+	extension.characterCount = 3;
+	for(uint i = 0; i != filePathCount; ++i)
+	{
+		WCHAR* pathString = {};
+		allocateSmallMemory(sizeof(WCHAR) * 256, (void**)&pathString);
+
+		filePath->string = pathString;
+		getFilePath(wParam, filePath, i);
+
+		checkExtension(filePath, &extension);
+		if(filePath->characterCount == 0)
+		{
+			continue;
+		}
+		++filePath;
+		++(*fileCount);
+	}
+}
+void getTrackInformation(State* state,uint fileCount, uint* trackNumber, uint* newTrackCount)
+{
+	POINT cursor;
+	GetCursorPos(&cursor);
+	HWND clipArea = state->clipArea;
+	ScreenToClient(clipArea, &cursor);
+	int y = cursor.y;
+	int x = cursor.x;
+	SendMessage(clipArea, WM_SETDROP, (WPARAM)x, 0);
+
+	int trackHeight = globalState.trackHeight;
+	*trackNumber = (uint)(y / trackHeight);
+
+	uint trackCount = globalState.trackCount;
+	if(*trackNumber >= trackCount)
+	{
+		*trackNumber = trackCount;
+	}
+	*newTrackCount = *trackNumber + fileCount - trackCount;
+	globalState.trackCount += *newTrackCount;
+}
+void getStartFrame(int x, uint64* startFrame)
 {
 	sint64 framesPerPixel = globalState.framesPerPixel;
-	uint64 frameCount = audioClip->waveFile.frameCount;
-
-	int width = (int)(frameCount / (uint64)framesPerPixel);
-	audioClip->width = width;
-	audioClip->x = x;
+	*startFrame = (uint64)(x * framesPerPixel);
 }
 void handleFileDrop(State* state, WPARAM wParam)
 {
-    uint fileCount;
-    getFileCount(wParam, &fileCount);
+	String* filePathArray;
+	uint fileCount = {};
+	getFilePathArray(wParam, &filePathArray, &fileCount);
 
-    uint trackNumber;
-    getTrackNumber(state, &trackNumber);
-    createTrack(state, trackNumber, fileCount);
+	uint newTrackCount = {};
+	uint trackNumber = {};
+	getTrackInformation(state, fileCount, &trackNumber, &newTrackCount);
 
-    int x;
-    getCursorX(state, &x);
+	createTrack(state, newTrackCount);
 
     for(uint i = 0; i != fileCount; ++i)
     {
-        WCHAR filePath[256];
-        getFilePath(wParam, filePath, i);
-        if(*filePath == 0)
-        {
-            break;
-        }
-
 		AudioClip audioClip = {};
-        waveFile::create(filePath, &audioClip.waveFile);
-		prepareClip(&audioClip, x);
-
+        waveFile::create(filePathArray[i].string, &audioClip.waveFile);
+		freeSmallMemory(filePathArray[i].string);
         sendAudioClip(state, &audioClip, trackNumber);
         ++trackNumber;
     }
+	freeSmallMemory(filePathArray);
 }
 void handleMouseLeftClick(State* state)
 {
@@ -276,9 +336,12 @@ void handleMouseLeftClick(State* state)
 	ScreenToClient(clipArea, &cursor);
 	int cursorX = cursor.x;
 	cursorX -= globalState.offsetX;
-	if(cursorX > 0)
+	if(state->playing == 0)
 	{
-		SendMessage(clipArea, WM_MOVECURSOR, (uint)cursorX, 0);
+		if(cursorX > 0)
+		{
+			SendMessage(clipArea, WM_MOVECURSOR, (uint)cursorX, 0);
+		}
 	}
 }
 LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
@@ -288,7 +351,7 @@ LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 	{
 		case WM_CREATE:
 		{
-            initialize(window);
+            setState(window, lParam);
 			break;
 		}
 		case WM_PAINT:

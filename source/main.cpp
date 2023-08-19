@@ -10,6 +10,8 @@ void initializeState()
 	globalState.rulerHeight = 16;
 	globalState.sidebarWidth = 128;
 	globalState.topbarHeight = 16;
+	globalState.trackControlWidth = 128;
+	globalState.trackControlHeight = 512;
 	globalState.offsetX = 0;
 	globalState.offsetY = 0;
 }

@@ -5,11 +5,6 @@ START_SCOPE(wasapi)
 
 LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 
-void create(HWND window, HWND* wasapi)
-{
-	createWindowClass(L"wasapiWindowClass", windowCallback);
-	createChildWindow(L"wasapiWindowClass", window, wasapi);
-}
 uint getAudioEngineSubFormat(WAVEFORMATEXTENSIBLE* audioEngineFormat)
 {
 	uint format = 0;
@@ -53,11 +48,11 @@ void setupEndpoint(State* state)
 	assert(result == S_OK);
 
 	state->format.type = (ushort)getAudioEngineSubFormat(audioEngineFormat);
-    state->format.channelCount = audioEngineFormat->Format.nChannels;
-    state->format.sampleRate = audioEngineFormat->Format.nSamplesPerSec;
-    state->format.byteRate = audioEngineFormat->Format.nAvgBytesPerSec;
-    state->format.blockAlign = audioEngineFormat->Format.nBlockAlign;
-    state->format.bitDepth = audioEngineFormat->Format.wBitsPerSample;
+	state->format.channelCount = audioEngineFormat->Format.nChannels;
+	state->format.sampleRate = audioEngineFormat->Format.nSamplesPerSec;
+	state->format.byteRate = audioEngineFormat->Format.nAvgBytesPerSec;
+	state->format.blockAlign = audioEngineFormat->Format.nBlockAlign;
+	state->format.bitDepth = audioEngineFormat->Format.wBitsPerSample;
 
 	result = audioClient->lpVtbl->Initialize(audioClient, AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_EVENTCALLBACK, 426700, 0, (WAVEFORMATEX*)audioEngineFormat, 0);
 	assert(result == S_OK);
@@ -91,10 +86,17 @@ void setupEndpoint(State* state)
 	state->audioClock = audioClock;
 	state->endpointDeviceFrequency = frequency;
 }
-void setCursor(State* state, WPARAM wParam)
+void createOutputBuffer(State* state)
 {
-	HWND cursor = (HWND)wParam;
-	state->cursor = cursor;
+	uint bufferFrameCount = state->bufferFrameCount;
+	uint bufferFrameSize = state->format.blockAlign;
+	uint bufferMemorySize = bufferFrameCount * bufferFrameSize;
+
+	char* buffer;
+	allocateSmallMemory(bufferMemorySize, (void**)&buffer);
+
+	state->endpointBuffer.start = buffer;
+	state->endpointBuffer.end = buffer + bufferMemorySize;
 }
 void sendLoadSignal(IAudioClient* audioClient, HANDLE loadEvent, uint frameCount)
 {
@@ -112,10 +114,10 @@ DWORD WINAPI endpointController(LPVOID parameter)
 	HANDLE loadEvent = state->outputLoadEvent;
 	HANDLE audioCallback = state->audioCallback;
 	uint frameCount = state->bufferFrameCount / 2;
-	while(1)
+	while (1)
 	{
 		uint signal = WaitForSingleObject(audioCallback, INFINITE);
-		switch(signal)
+		switch (signal)
 		{
 			case WAIT_OBJECT_0:
 			{
@@ -125,14 +127,40 @@ DWORD WINAPI endpointController(LPVOID parameter)
 	}
 	return 0;
 }
+void create(HWND window, HWND* wasapi)
+{
+	State* state = {};
+	allocateSmallMemory(sizeof(State), (void**)&state);
+
+	createEvent(0, &state->audioCallback);
+	createEvent(0, &state->inputLoadEvent);
+	createEvent(0, &state->outputLoadEvent);
+	createEvent(0, &state->inputExitEvent);
+	createEvent(0, &state->exitLoader);
+	createSemaphore(0, 3, &state->inputFinishSemaphore);
+
+	setupEndpoint(state);
+	createOutputBuffer(state);
+	createThread(endpointController, state, 0);
+
+	bus::create(window, &state->busArray[0]);
+
+	createWindowClass(L"wasapiWindowClass", windowCallback);
+	createChildWindow(L"wasapiWindowClass", window, wasapi, state);
+}
+void setCursor(State* state, WPARAM wParam)
+{
+	HWND cursor = (HWND)wParam;
+	state->cursor = cursor;
+}
 void load(float** source, float** destination, uint iterationCount)
 {
-	__m256* sourceAVX = (__m256*) * source;
-	__m256* destinationAVX = (__m256*) * destination;
+	__m256* sourceAVX = (__m256*)*source;
+	__m256* destinationAVX2 = (__m256*)*destination;
 	for (uint i = 0; i != iterationCount; ++i)
 	{
-		*destinationAVX = *sourceAVX;
-		++destinationAVX;
+		_mm256_store_ps((float*)destinationAVX2, *sourceAVX);
+		++destinationAVX2;
 		++sourceAVX;
 	}
 	*source = (float*)sourceAVX;
@@ -233,38 +261,7 @@ void handleTimer(State* state)
 	HWND cursor = state->cursor;
 	SendMessage(cursor, WM_TIMER, (WPARAM)timeElapsedInMilliseconds, 0);
 }
-void createOutputBuffer(State* state)
-{
-	uint bufferFrameCount = state->bufferFrameCount;
-	uint bufferFrameSize = state->format.blockAlign;
-	uint bufferMemorySize = bufferFrameCount * bufferFrameSize;
 
-	char* buffer;
-	allocateSmallMemory(bufferMemorySize, (void**)&buffer);
-
-	state->endpointBuffer.start = buffer;
-	state->endpointBuffer.end = buffer + bufferMemorySize;
-}
-void initialize(HWND window)
-{
-	State* state = {};
-	allocateSmallMemory(sizeof(State), (void**)&state);
-	SetProp(window, L"state", state);
-
-	createEvent(0, &state->audioCallback);
-	createEvent(0, &state->inputLoadEvent);
-	createEvent(0, &state->outputLoadEvent);
-	createEvent(0, &state->inputExitEvent);
-	createEvent(0, &state->exitLoader);
-	createSemaphore(0, 3, &state->inputFinishSemaphore);
-
-    setupEndpoint(state);
-	createOutputBuffer(state);
-
-	createThread(endpointController, state, 0);
-
-	bus::create(window, &state->busArray[0]);
-}
 void startLoader(State* state)
 {
 	Loader busLoader = {};
@@ -300,7 +297,7 @@ LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 	{
 		case WM_CREATE:
 		{
-            initialize(window);
+			setState(window, lParam);
 			break;
 		}
 		case WM_SETCURSOR:

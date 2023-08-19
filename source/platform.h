@@ -14,7 +14,6 @@ void createMutex(int initialState, HANDLE* handle);
 void createSemaphore(uint initialCount, uint maximumCount, HANDLE* handle);
 
 void getProcessHeap(HANDLE* handle);
-
 void allocateSmallMemory(uint64 size, void** memory);
 void freeSmallMemory(void* memory);
 void allocateBigMemory(uint64 size, char** memory);
@@ -29,8 +28,11 @@ void loadFile(WCHAR* filePath, char** memory);
 void getModuleHandle(HINSTANCE* instance);
 
 void createWindowClass(const WCHAR* className, WNDPROC callbackFunction);
-void createWindow(const WCHAR* className, int width, int height, HWND* window);
-void createChildWindow(const WCHAR* className, HWND parentHandle, HWND* window);
+void createWindow(const WCHAR* className, int width, int height, HWND* window, void* lParam);
+void createOwnedWindow(const WCHAR* className, HWND parentHandle, HWND* window, void* lParam);
+void createChildWindow(const WCHAR* className, HWND parentHandle, HWND* window, void* lParam);
+
+void setState(HWND window, LPARAM lParam);
 
 void getRect(RECT* rectangle, int* left, int* top, int* right, int* bottom);
 void getWindowRectangle(HWND windowHandle, int* left, int* top, int* right, int* bottom);
@@ -53,7 +55,7 @@ void zoomWindow(HWND window, LPARAM oldFramesPerPixel);
 void drawMarking(HDC deviceContext, RECT* invalidRectangle, int offset);
 void drawGrid(HDC deviceContext, RECT* invalidRectangle, int offsetX);
 
-void getFilePath(WPARAM wParam, WCHAR* filePath, uint index);
+void getFilePath(WPARAM wParam, String* filePath, uint index);
 void getFileCount(WPARAM wParam, uint* count);
 void horizontalScroll(HWND window, LPARAM lParam);
 void getTrackNumber(HWND window, int* trackNumber, int height);

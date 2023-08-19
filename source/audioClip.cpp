@@ -5,10 +5,18 @@ START_SCOPE(audioClip)
 
 LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 
-void create(HWND window, HWND* audioClip)
+void create(HWND parent, HWND* window, AudioClip* audioClip)
 {
+	State* state = {};
+	allocateSmallMemory(sizeof(State), (void**)&state);
+	state->audioClip = audioClip;
+
 	createWindowClass(L"audioClipWindowClass", windowCallback);
-	createChildWindow(L"audioClipWindowClass", window, audioClip);
+	createChildWindow(L"audioClipWindowClass", parent, window, state);
+
+	HWND waveform;
+	waveform::create(*window, &waveform, &audioClip->waveFile);
+	state->waveform = waveform;
 }
 void paintWindow(HWND window)
 {
@@ -46,12 +54,12 @@ void handleMoving(HWND window, LPARAM lParam)
 	windowRectangle->top = y;
 	windowRectangle->bottom = y + globalState.trackHeight;
 }
-void resizeChild(HWND window, LPARAM lParam)
+void resizeChild(State* state, LPARAM lParam)
 {
-	HWND child = GetWindow(window, GW_CHILD);
-	SendMessage(child, WM_RESIZE, 0, lParam);
+	HWND waveform = state->waveform;
+	SendMessage(waveform, WM_RESIZE, 0, lParam);
 }
-LRESULT handleClientPreservation(WPARAM wParam, LPARAM lParam)
+LRESULT handleClientPreservation(State* state, WPARAM wParam, LPARAM lParam)
 {
 	if (!wParam)
 	{
@@ -62,6 +70,10 @@ LRESULT handleClientPreservation(WPARAM wParam, LPARAM lParam)
 	RECT* oldRectangle = newRectangle + 1;
 	LRESULT result = {};
 
+	int width = newRectangle->right - newRectangle->left;
+	sint64 framesPerPixel = globalState.framesPerPixel;
+	uint64 frameCount = (uint64)(width * framesPerPixel);
+	state->audioClip->frameCount = frameCount;
 	//int startOffsetDelta = newRectangle->right - oldRectangle->right;
 	//int endOffsetDelta = oldRectangle->left -  newRectangle->left;
 
@@ -80,19 +92,19 @@ void handleSizing(WPARAM wParam, LPARAM lParam)
 	}
 }
 #endif
-void handleFileDrop(State* state, HWND window, WPARAM wParam)
+void handleMove(State* state, LPARAM lParam)
 {
-	AudioClip* audioClip = (AudioClip*)wParam;
-	state->audioClip = audioClip;
-	HWND waveform;
-	waveform::create(window, &waveform);
-	SendMessage(waveform, WM_FILEDROP, (WPARAM)&audioClip->waveFile, 0);
-}
-void initialize(HWND window)
-{
-	State* state = {};
-	allocateSmallMemory(sizeof(State), (void**)&state);
-	SetProp(window, L"state", state);
+	int x = LOWORD(lParam);
+	sint64 framesPerPixel = globalState.framesPerPixel;
+	uint64 startFrame = (uint64)(x * framesPerPixel);
+
+	AudioClip* audioClip = state->audioClip;
+	uint64 frameCount = audioClip->frameCount;
+	uint64 endFrame = startFrame + frameCount;
+
+	uint loadFrameCount = globalState.audioEndpointFrameCount / 2; 
+	state->audioClip->startFrame = startFrame / loadFrameCount;
+	state->audioClip->endFrame = endFrame / loadFrameCount;
 }
 LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 {
@@ -101,7 +113,7 @@ LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 	{
 		case WM_CREATE:
 		{
-			initialize(window);
+			setState(window, lParam);
 			break;
 		}
 		case WM_PAINT:
@@ -109,31 +121,27 @@ LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 			paintWindow(window);
 			break;
 		}
-		case WM_FILEDROP:
-		{
-			handleFileDrop(state, window, wParam);
-			break;
-		}
 		case WM_MOVING:
 		{
 			handleMoving(window, lParam);
 			break;
 		}
+		case WM_MOVE:
+		{
+			handleMove(state, lParam);
+			break;
+		}
 		case WM_NCCALCSIZE:
 		{
-			return handleClientPreservation(wParam, lParam);
+			return handleClientPreservation(state, wParam, lParam);
 		}
 		case WM_NCHITTEST:
 		{
 			return handleHitTesting(window, lParam);
 		}
-		case WM_SIZING:
-		{
-			//handleSizing(wParam, lParam);
-		}
 		case WM_SIZE:
 		{
-			resizeChild(window, lParam);
+			resizeChild(state, lParam);
 			break;
 		}
 	}

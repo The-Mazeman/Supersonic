@@ -10,7 +10,9 @@ struct State
 {	Loader loader;
 	AudioClip clipList[4];
 	uint clipCount;
-	uint padding;
+	uint effectCount;
+	TrackControl trackControl;
+	AudioEffect audioEffectList[4];
 };
 
 void create(HWND window, HWND* audioTrack);

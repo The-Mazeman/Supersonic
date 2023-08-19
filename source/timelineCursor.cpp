@@ -7,8 +7,14 @@ LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 
 void create(HWND parent, HWND* timelineCursor)
 {
+	State* state = {};
+	allocateSmallMemory(sizeof(State), (void**)&state);
+
+	state->x = 0;
+	state->y = 0;
+
 	createWindowClass(L"timelineCursorWindowClass", windowCallback);
-	createChildWindow(L"timelineCursorWindowClass", parent, timelineCursor);
+	createChildWindow(L"timelineCursorWindowClass", parent, timelineCursor, state);
 }
 void paintWindow(HWND window)
 {
@@ -51,15 +57,6 @@ void setCursorPosition(State* state, HWND window)
 
 	state->x = x;
 }
-void initialize(HWND window)
-{
-	State* state = {};
-	allocateSmallMemory(sizeof(State), (void**)&state);
-	SetProp(window, L"state", state);
-
-	state->x = 0;
-	state->y = 0;
-}
 LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 {
 	State* state = (State*)GetProp(window, L"state");
@@ -67,7 +64,7 @@ LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 	{
 		case WM_CREATE:
 		{
-			initialize(window);
+			setState(window, lParam);
 			break;
 		}
 		case WM_PAINT:

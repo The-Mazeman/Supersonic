@@ -7,48 +7,52 @@ LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 
 void create(HWND window, HWND* audioTrack)
 {
+	State* state = {};
+	allocateSmallMemory(sizeof(State), (void**)&state);
+	state->clipCount = 0;
+	state->trackControl.gain = _mm256_set1_ps(1.0f);
+
     createWindowClass(L"audioTrackWindowClass", windowCallback);
-    createChildWindow(L"audioTrackWindowClass", window, audioTrack);
+    createChildWindow(L"audioTrackWindowClass", window, audioTrack, state);
+
+	SendMessage(window, WM_ASSIGNBUS, (WPARAM)*audioTrack, 0);
 }
 void addClip(State* state, WPARAM wParam)
 {
 	AudioClip** audioClip = (AudioClip**)wParam;
-	state->clipList[0] = *(*audioClip);
-    *audioClip = &state->clipList[0];
+	uint clipCount = state->clipCount;
+	state->clipList[clipCount] = *(*audioClip);
+	state->clipList[clipCount + 1] = {};
 
+    *audioClip = &state->clipList[clipCount];
 	++state->clipCount;
 }
 void chooseClip(State* state, AudioClip** audioClip)
 {
 	uint64 readCursor = globalState.readCursor;
-	sint64 framesPerPixel = globalState.framesPerPixel;
-	uint64 loadFrameCount = globalState.audioEndpointFrameCount / 2;
 	uint clipCount = state->clipCount;
 	AudioClip* clipList = state->clipList;
 	for(uint i = 0; i != clipCount; ++i)
 	{
-		uint64 endFrame = clipList[i].x * (uint64)framesPerPixel + clipList[i].frameCount;
-		endFrame /= loadFrameCount;
-
-		if (readCursor <= endFrame)
+		uint64 endFrame = clipList[i].endFrame;
+		if (readCursor < endFrame)
 		{
 			*audioClip = &clipList[i];
 			break;
 		}
 	}
 }
-void loadSample(float** sample, float** buffer, uint iterationCount, uint trackCount)
+void loadSample(float* sample, float** buffer, uint iterationCount, uint trackCount)
 {
-	__m256* source = (__m256*)*sample;
-	__m256* destination = (__m256*)*buffer;
+	__m256* sourceAVX2 = (__m256*)sample;
+	__m256* destinationAVX2 = (__m256*)*buffer;
 	for(uint i = 0; i != iterationCount; ++i)
 	{
-		*destination = *source;
-		destination += (trackCount);
-		++source;
+		_mm256_store_ps((float*)destinationAVX2, *sourceAVX2);
+		destinationAVX2 += trackCount;
+		++sourceAVX2;
 	}
-	*sample = (float*)source;
-	*buffer = (float*)destination;
+	*buffer = (float*)destinationAVX2;
 }
 void checkStart(uint64 startFrame, uint64 readCursor, uint* loadCase)
 {
@@ -57,19 +61,20 @@ void checkStart(uint64 startFrame, uint64 readCursor, uint* loadCase)
 		*loadCase = 2;
 	}
 }
-void checkClipEnd(float* sample, float* clipEnd, uint* loadCase)
+void checkClipEnd(uint64 readCursor, uint64 endFrame, uint* loadCase)
 {
-	if(sample == clipEnd)
+	if(readCursor == endFrame)
 	{
 		*loadCase = 3;
 	}
 }
 void fillZero(float** destination, uint iterationCount, uint trackCount)
 {
+	__m256 zero = _mm256_setzero_ps();
 	__m256* destinationAVX2 = (__m256*)*destination;
 	for(uint i = 0; i != iterationCount; ++i)
 	{
-		*destinationAVX2 = {};
+		_mm256_store_ps((float*)destinationAVX2, zero);
 		destinationAVX2 += trackCount;
 	}
 	*destination = (float*)destinationAVX2;
@@ -90,16 +95,8 @@ void prepareClip(AudioClip* audioClip, float** sample, uint* loadCase)
 	}
 
 	uint64 readCursor = globalState.readCursor;
-	sint64 framesPerPixel = globalState.framesPerPixel;
-	uint64 loadFrameCount = globalState.audioEndpointFrameCount / 2;
-	uint64 start = audioClip->x * (uint64)framesPerPixel;
-	start /= loadFrameCount;
-	audioClip->startFrame = start;
-
-  	uint64 frameCount = audioClip->width * (uint64)framesPerPixel;
-	audioClip->frameCount = frameCount;
-
-	*sample = audioClip->waveFile.sampleChunk;
+	uint64 start = audioClip->startFrame;
+	float* sampleChunk = audioClip->waveFile.sampleChunk;
 	if(readCursor < start)
 	{
 		*loadCase = 0;
@@ -110,23 +107,63 @@ void prepareClip(AudioClip* audioClip, float** sample, uint* loadCase)
 	}
 	else
 	{
+		uint64 offset = readCursor - start;
+		uint64 loadFrameCount = globalState.audioEndpointFrameCount / 2;
+		uint64 offsetFrameCount = offset * loadFrameCount;
+		uint channelCount = audioClip->waveFile.header.channelCount;
+		sampleChunk += (channelCount * offsetFrameCount);
+		*loadCase = 2;
 	}
+	*sample = sampleChunk;
 }
-void selectNextClip(AudioClip* audioClip, uint clipCount, uint* caseToSwitch)
+void selectNextClip(AudioClip** audioClip, uint* caseToSwitch)
 {
-	if(audioClip->id + 1 < clipCount)
+	AudioClip* nextClip = *audioClip + 1;
+	if(nextClip->startFrame == 0)
 	{
-		audioClip += 1;
+		*caseToSwitch = 4;
+		*audioClip = 0;
 	}
 	else
 	{
-		*caseToSwitch = 4;
-		audioClip = 0;
+		audioClip += 1;
 	}
-
 }
-void load(Loader* trackLoader, AudioClip* audioClip, float* sample, uint loadCase, uint clipCount)
+void fillProcessingBuffer(float** intput, float* output, uint iterationCount)
 {
+	__m256* sourceAVX2 = (__m256*)*intput;
+	__m256* destinationAVX2 = (__m256*)output;
+	for (uint i = 0; i != iterationCount; ++i)
+	{
+		_mm256_store_ps((float*)destinationAVX2, *sourceAVX2);
+		++destinationAVX2;
+		++sourceAVX2;
+	}
+	*intput = (float*)sourceAVX2;
+}
+void processAudioEffect(AudioEffect* audioEffectList, uint effectCount, float* sample, uint iterationCount)
+{	
+	for(uint i = 0; i != effectCount; ++i)
+	{
+		ProcessFunction process  = audioEffectList->process;
+		void* state = audioEffectList->state;
+		process(sample, iterationCount, state);
+		++audioEffectList;
+	}
+}
+void processGain(float* sample, uint iterationCount, void* state)
+{
+	__m256 gain = *((__m256*)state);
+	__m256* sampleAVX2 = (__m256*)sample;
+	for(uint i = 0; i != iterationCount; ++i)
+	{
+		*sampleAVX2 = _mm256_mul_ps(gain, *sampleAVX2);
+		++sampleAVX2;
+	}
+}
+void load(State* state, AudioClip* audioClip, float* sample, uint loadCase)
+{
+	Loader* trackLoader = &state->loader;
 	HANDLE loadEvent = trackLoader->loadEvent;
 	HANDLE exitEvent = trackLoader->exitSemaphore;
 	HANDLE finishSemaphore = trackLoader->finishSemaphore;
@@ -136,25 +173,37 @@ void load(Loader* trackLoader, AudioClip* audioClip, float* sample, uint loadCas
 	uint bufferOffset = trackLoader->trackNumber * AVX2_FRAME_SIZE;
 	float* destination = (float*)(trackLoader->buffer.start + bufferOffset);
 
-	uint loadFrameCount = globalState.audioEndpointFrameCount / 2;
+	uint loadFrameCount = 1024;
 	uint framesPerAVX2 = 32 / 8;
 	uint iterationCount = loadFrameCount / framesPerAVX2;
+	uint bufferSize = sizeof(float) * 2 * loadFrameCount;
 
-	uint64 frameCount = audioClip->frameCount / loadFrameCount;
-	uint channelCount = audioClip->waveFile.header.channelCount;
-	float* clipEnd = sample + (frameCount * loadFrameCount * channelCount);
+	float* processingBuffer = {};
+	allocateSmallMemory(bufferSize, (void**)&processingBuffer);
 
 	uint trackCount = trackLoader->trackCount;
 	uint* finishCount = trackLoader->finishCount;
-	uint64 startFrame = audioClip->startFrame;
+
+	uint64 startFrame = {};
+	uint64 endFrame = {};
+	uint caseToSwitch = 4;
+	if(audioClip)
+	{
+		startFrame = audioClip->startFrame;
+		endFrame = audioClip->endFrame - 1;
+		caseToSwitch = 1;
+	}
 	uint64 readCursor = globalState.readCursor;
 	uint zeroFillCount = 2;
+	AudioEffect* audioEffectList = state->audioEffectList;
+	audioEffectList->process = processGain;
+	audioEffectList->state = &state->trackControl.gain;
+	uint effectCount = 1;
 	HANDLE waitHandle[] = {loadEvent, exitEvent};
 	uint running = 1;
-	uint caseToSwitch = 1;
 	while(running)
 	{
-		++readCursor;
+		++readCursor; 
 		uint signal = WaitForMultipleObjects(2, waitHandle, 0, INFINITE);
 		switch(signal)
 		{
@@ -176,14 +225,16 @@ void load(Loader* trackLoader, AudioClip* audioClip, float* sample, uint loadCas
 					}
 					case 2:
 					{
-						loadSample(&sample, &destination, iterationCount, trackCount);
-						checkClipEnd(sample, clipEnd, &loadCase);
+						fillProcessingBuffer(&sample, processingBuffer, iterationCount);
+						processAudioEffect(audioEffectList, effectCount, processingBuffer, iterationCount);
+						loadSample(processingBuffer, &destination, iterationCount, trackCount);
+						checkClipEnd(readCursor, endFrame, &loadCase);
 						boundCheck(outputBuffer, (void**)&destination, bufferOffset); 
 						break;
 					}
 					case 3:
 					{
-						selectNextClip(audioClip, clipCount, &caseToSwitch);
+						selectNextClip(&audioClip, &caseToSwitch);
 						prepareClip(audioClip, &sample, &loadCase);
 						zeroFillCount = 2;
 						break;
@@ -207,33 +258,26 @@ DWORD WINAPI sampleLoader(LPVOID parameter)
 {
 	State* state = (State*)parameter;
 	AudioClip* audioClip = {};
-	chooseClip(state, &audioClip);
+ 	chooseClip(state, &audioClip);
 
 	uint loadCase;
 	float* sample;
 	prepareClip(audioClip, &sample, &loadCase);
 
-	uint clipCount = state->clipCount;
-	Loader* loader = &state->loader;
-	load(loader, audioClip, sample, loadCase, clipCount);
+	load(state, audioClip, sample, loadCase);
+			
 	return 0;
 }
 void startLoader(State* state, WPARAM wParam)
 {
 	state->loader = *(Loader*)wParam;
-
 	createThread(sampleLoader, (LPVOID)state, 0);
 }
-void initialize(HWND window)
+void setControl(State* state, HWND window)
 {
-	State* state = {};
-	allocateSmallMemory(sizeof(State), (void**)&state);
-	SetProp(window, L"state", state);
-
-	state->clipCount = 0;
-
 	HWND parent = GetAncestor(window, GA_PARENT);
-	SendMessage(parent, WM_ASSIGNBUS, (WPARAM)window, 0);
+	TrackControl* trackControl = &state->trackControl;
+	SendMessage(parent, WM_SETCONTROL, (WPARAM)trackControl, 0);
 }
 LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 {
@@ -242,7 +286,7 @@ LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 	{
 		case WM_CREATE:
 		{
-			initialize(window);
+			setState(window, lParam);
 			break;
 		}
 		case WM_FILEDROP:
@@ -258,6 +302,11 @@ LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 		case WM_ASSIGNBUS:
 		{
 			//selectBus(window);
+			break;
+		}
+		case WM_SETCONTROL:
+		{
+			setControl(state, window);
 			break;
 		}
 	}

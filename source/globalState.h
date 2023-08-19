@@ -11,6 +11,9 @@ struct GlobalState
 	int sidebarWidth;
 	int topbarHeight;
 
+	int trackControlWidth;
+	int trackControlHeight;
+
     int offsetX;
     int offsetY;
 

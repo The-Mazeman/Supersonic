@@ -7,8 +7,13 @@ LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 
 void create(HWND window, HWND* textBox)
 {
+	State* state = {};
+	allocateSmallMemory(sizeof(State), (void**)&state);
+	state->name.string = (WCHAR*)L"Audio Track";
+	state->name.characterCount = 12;
+
 	createWindowClass(L"textBoxWindowClass", windowCallback);
-	createChildWindow(L"textBoxWindowClass", window, textBox);
+	createChildWindow(L"textBoxWindowClass", window, textBox, state);
 	MoveWindow(*textBox, 0, 0, 140, 20, 1);
 }
 void paintWindow(State* state, HWND window)
@@ -19,7 +24,7 @@ void paintWindow(State* state, HWND window)
 
 	RECT* invalidRectangle = &paintStruct.rcPaint;
 	rectangleFill(deviceContext, invalidRectangle, COLOR_WHITE);
-	#if 0
+
 	HFONT font = CreateFont(15, 0, 0, 0, 0, 0, 0, 0, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
 	SelectObject(deviceContext, font);
 
@@ -27,23 +32,12 @@ void paintWindow(State* state, HWND window)
 	SetBkMode(deviceContext, TRANSPARENT);
 	SetTextColor(deviceContext, COLOR_BLACK);
 
-	String* name = state->name;
+	String* name = &state->name;
 	TextOut(deviceContext, 2, 2, name->string, (int)name->characterCount);
 
 	DeleteObject(font);
-	#endif
+
 	EndPaint(window, &paintStruct);
-}
-void initialize(HWND window)
-{
-	State* state = {};
-	allocateSmallMemory(sizeof(State), (void**)&state);
-	SetProp(window, L"state", state);
-}
-void setTrackName(State* state, WPARAM wParam)
-{
-	String* name = (String*)wParam;
-	state->name = name;
 }
 LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 {
@@ -52,12 +46,7 @@ LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 	{
 		case WM_CREATE:
 		{
-			initialize(window);
-			break;
-		}
-		case WM_SETTEXT:
-		{
-			setTrackName(state, wParam);
+			setState(window, lParam);
 			break;
 		}
 		case WM_PAINT:

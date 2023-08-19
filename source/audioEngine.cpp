@@ -7,8 +7,14 @@ LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 
 void create(HWND window, HWND* audioEngine)
 {
+	State* state = {};
+	allocateSmallMemory(sizeof(State), (void**)&state);
+
     createWindowClass(L"audioEngineWindowClass", windowCallback);
-    createChildWindow(L"audioEngineWindowClass", window, audioEngine);
+    createChildWindow(L"audioEngineWindowClass", window, audioEngine, state);
+
+	wasapi::create(window, &state->wasapi);
+	trackControl::create(window, &state->trackControl);
 }
 void setCursor(State* state, WPARAM wParam)
 {
@@ -26,12 +32,13 @@ void stopPlayback(State* state)
 	HWND wasapi = state->wasapi;
 	SendMessage(wasapi, WM_PAUSE, 0, 0);
 }
-void createTrack(State* state, HWND window, WPARAM wParam)
+void createTrack(State* state, HWND window, WPARAM wParam, LPARAM lParam)
 {
     uint trackNumber = (uint)wParam;
     HWND audioTrack;
     audioTrack::create(window, &audioTrack);
     state->audioTrackArray[trackNumber] = audioTrack;
+	*(HWND*)lParam = audioTrack;
 }
 void handleFileDrop(State* state, WPARAM wParam, LPARAM lParam)
 {
@@ -44,13 +51,10 @@ void assignBus(State* state, WPARAM wParam, LPARAM lParam)
 	HWND wasapi = state->wasapi;
 	SendMessage(wasapi, WM_ASSIGNBUS, wParam, lParam);
 }
-void initialize(HWND window)
+void setControl(State* state, WPARAM wParam)
 {
-	State* state = {};
-	allocateSmallMemory(sizeof(State), (void**)&state);
-	SetProp(window, L"state", state);
-
-    wasapi::create(window, &state->wasapi);
+	HWND trackControl = state->trackControl;
+	SendMessage(trackControl, WM_SETCONTROL, wParam, 0);
 }
 LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 {
@@ -59,7 +63,7 @@ LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 	{
         case WM_CREATE:
         {
-            initialize(window);
+			setState(window, lParam);
             break;
         }
 		case WM_PLAY:
@@ -79,7 +83,7 @@ LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 		}
 		case WM_CREATETRACK:
 		{
-			createTrack(state, window, wParam);
+			createTrack(state, window, wParam, lParam);
 			break;
 		}
 		case WM_FILEDROP:
@@ -90,6 +94,11 @@ LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 		case WM_ASSIGNBUS:
 		{
 			assignBus(state, wParam, lParam);
+			break;
+		}
+		case WM_SETCONTROL:
+		{
+			setControl(state, wParam);
 			break;
 		}
 	}

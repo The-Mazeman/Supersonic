@@ -9,10 +9,18 @@ void getCursor(State* state, HWND* window)
 {
     *window = state->timelineCursor;
 }
-void create(HWND parent, HWND* child)
+void create(HWND parent, HWND* window)
 {
+	State* state = {};
+	allocateSmallMemory(sizeof(State), (void**)&state);
+
+	state->x = globalState.sidebarWidth;
+	state->y = globalState.topbarHeight + globalState.rulerHeight;
+
 	createWindowClass(L"clipAreaWindowClass", windowCallback);
-	createChildWindow(L"clipAreaWindowClass", parent, child);
+	createChildWindow(L"clipAreaWindowClass", parent, window, state);
+
+	timelineCursor::create(*window, &state->timelineCursor);
 }
 void handleResize(State* state, HWND window, WPARAM wParam)
 {
@@ -40,30 +48,20 @@ void paintWindow(HWND window)
 	drawGrid(deviceContext, invalidRectangle, offsetX);
 	EndPaint(window, &paintStruct);
 }
-void handleFileDrop(HWND window, WPARAM wParam, LPARAM lParam)
+void handleFileDrop(State* state, HWND window, WPARAM wParam, LPARAM lParam)
 {
 	uint trackNumber = (uint)lParam;
-	HWND audioClipWindow;
-	audioClip::create(window, &audioClipWindow);
-	SendMessage(audioClipWindow, WM_FILEDROP, wParam, lParam);
-
 	AudioClip* audioClip = (AudioClip*)wParam;
+	HWND audioClipWindow;
+	audioClip::create(window, &audioClipWindow, audioClip);
+
 	int trackHeight = globalState.trackHeight;
-	int width = audioClip->width;
-	int x = audioClip->x;
+	sint64 framesPerPixel = globalState.framesPerPixel;
+	uint64 frameCount = audioClip->waveFile.frameCount;
+	int width = (int)(frameCount / (uint64)framesPerPixel);
+	int x = state->dropX;
 	int y = trackHeight * (int)trackNumber;
 	placeWindow(audioClipWindow, x, y, width, trackHeight);
-}
-void initialize(HWND window)
-{
-	State* state = {};
-	allocateSmallMemory(sizeof(State), (void**)&state);
-	SetProp(window, L"state", state);
-
-	state->x = globalState.sidebarWidth;
-	state->y = globalState.topbarHeight + globalState.rulerHeight;
-
-    timelineCursor::create(window, &state->timelineCursor);
 }
 void moveCursor(State* state, WPARAM wParam)
 {
@@ -89,6 +87,11 @@ void resizeChild(State* state, LPARAM lParam)
 	HWND timelineCursor = state->timelineCursor;
 	SendMessage(timelineCursor, WM_RESIZE, 0, lParam);
 }
+void setDropLocation(State* state, WPARAM wParam)
+{
+	int dropX = (int)wParam;
+	state->dropX = dropX;
+}
 LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 {
 	State* state = (State*)GetProp(window, L"state");
@@ -96,7 +99,7 @@ LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 	{
 		case WM_CREATE:
 		{
-            initialize(window);
+            setState(window, lParam);
 			break;
 		}
 		case WM_PAINT:
@@ -119,9 +122,14 @@ LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 			handleResize(state, window, wParam);
 			break;
 		}
+        case WM_SETDROP:
+		{
+			setDropLocation(state, wParam);
+			break;
+		}
         case WM_FILEDROP:
         {
-            handleFileDrop(window, wParam, lParam);
+            handleFileDrop(state, window, wParam, lParam);
             break;
         }
 		case WM_MOVECURSOR:

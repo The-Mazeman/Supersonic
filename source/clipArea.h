@@ -12,7 +12,7 @@ struct State
     int x;
     int y;
     int height;
-    int padding;
+    int dropX;
     HWND timelineCursor;
 
 };

@@ -5,10 +5,17 @@ START_SCOPE(sidebar)
 
 LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 
-void create(HWND parent, HWND* child)
+void create(HWND parent, HWND* window)
 {
+	State* state = {};
+	allocateSmallMemory(sizeof(State), (void**)&state);
+
+	state->x = 0;
+	state->y = globalState.topbarHeight + globalState.rulerHeight;
+	state->width = globalState.sidebarWidth;
+
 	createWindowClass(L"sidebarWindowClass", windowCallback);
-	createChildWindow(L"sidebarWindowClass", parent, child);
+	createChildWindow(L"sidebarWindowClass", parent, window, state);
 }
 void handleResize(State* state, HWND window, WPARAM wParam)
 {
@@ -40,13 +47,14 @@ void paintWindow(State* state, HWND window)
 
 	EndPaint(window, &paintStruct);
 }
-void createTrack(State* state, HWND window, WPARAM wParam)
+void createTrack(State* state, HWND window, WPARAM wParam, LPARAM lParam)
 {
 	HWND* trackHeaderArray = state->trackHeaderArray;
     uint trackNumber = (uint)wParam;
 
+	HWND audioTrack = (HWND)lParam;
     HWND trackHeader = {};
-    trackHeader::create(window, &trackHeader);
+    trackHeader::create(window, &trackHeader, audioTrack);
 
 	int height = globalState.trackHeight;
 	int width = globalState.sidebarWidth;
@@ -55,16 +63,6 @@ void createTrack(State* state, HWND window, WPARAM wParam)
 
     trackHeaderArray[trackNumber] = trackHeader;
 }
-void initialize(HWND window)
-{
-	State* state = {};
-	allocateSmallMemory(sizeof(State), (void**)&state);
-	SetProp(window, L"state", state);
-
-	state->x = 0;
-	state->y = globalState.topbarHeight + globalState.rulerHeight;
-	state->width = globalState.sidebarWidth;
-}
 LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 {
 	State* state = (State*)GetProp(window, L"state");
@@ -72,12 +70,12 @@ LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 	{
         case WM_CREATE:
         {
-            initialize(window);
+			setState(window, lParam);
             break;
         }
 		case WM_CREATETRACK:
         {
-            createTrack(state, window, wParam);
+            createTrack(state, window, wParam, lParam);
             break;
         }
 		case WM_PAINT:

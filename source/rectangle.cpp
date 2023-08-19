@@ -1,18 +1,15 @@
 #include "header.h"
-#include "topbar.h"
+#include "rectangle.h"
 
-START_SCOPE(topbar)
+START_SCOPE(rectangle)
 
 LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 
-void create(HWND parent, HWND* child)
+void create(HWND parent, HWND* window, WindowPosition* position)
 {
-	State* state = {};
-	allocateSmallMemory(sizeof(State), (void**)&state);
-	state->height = globalState.topbarHeight;
-
-	createWindowClass(L"topBarWindowClass", windowCallback);
-	createChildWindow(L"topBarWindowClass", parent, child, state);
+	createWindowClass(L"rectangleWindowClass", windowCallback);
+	createChildWindow(L"rectangleWindowClass", parent, window, position);
+	ShowWindow(*window, SW_HIDE);
 }
 void paintWindow(HWND window)
 {
@@ -24,20 +21,18 @@ void paintWindow(HWND window)
 
 	EndPaint(window, &paintStruct);
 }
-void handleResize(State* state, HWND window, WPARAM wParam)
+void handleResize(WindowPosition* position, HWND window)
 {
-    int x = 0;
-    int y = 0;
-
-	POINT* parent = (POINT*)wParam;
-	int width = parent->x;
-	int height = state->height;
+	int x = position->x;
+	int y = position->y;
+	int width = position->width;
+	int height = position->height;
 
 	placeWindow(window, x, y, width, height);
 }
 LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 {
-	State* state = (State*)GetProp(window, L"state");
+	WindowPosition* position = (WindowPosition*)GetProp(window, L"state");
 	switch (message)
 	{
 		case WM_CREATE:
@@ -52,7 +47,7 @@ LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 		}
 		case WM_RESIZE:
 		{
-			handleResize(state, window, wParam);
+			handleResize(position, window);
 			break;
 		}
 		case WM_NCHITTEST:
@@ -62,4 +57,5 @@ LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 	}
 	return DefWindowProc(window, message, wParam, lParam);
 }
+
 END_SCOPE

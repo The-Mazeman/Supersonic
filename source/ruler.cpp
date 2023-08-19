@@ -7,9 +7,15 @@ LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 
 void create(HWND parent, HWND* child)
 {
+	State* state = {};
+	allocateSmallMemory(sizeof(State), (void**)&state);
+
+	state->x = globalState.sidebarWidth;
+	state->y = globalState.topbarHeight;
+	state->height = globalState.rulerHeight;
 
 	createWindowClass(L"rulerWindowClass", windowCallback);
-	createChildWindow(L"rulerWindowClass", parent, child);
+	createChildWindow(L"rulerWindowClass", parent, child, state);
 }
 void paintWindow(State* state, HWND window)
 {
@@ -46,16 +52,6 @@ void handleResize(State* state, HWND window, WPARAM wParam)
 
     placeWindow(window, x, y, width, height);
 }
-void initialize(HWND window)
-{
-	State* state = {};
-	allocateSmallMemory(sizeof(State), (void**)&state);
-	SetProp(window, L"state", state);
-
-	state->x = globalState.sidebarWidth;
-	state->y = globalState.topbarHeight;
-	state->height = globalState.rulerHeight;
-}
 LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 {
 	State* state = (State*)GetProp(window, L"state");
@@ -63,7 +59,7 @@ LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 	{
 		case WM_CREATE:
 		{
-			initialize(window);
+			setState(window, lParam);
 			break;
 		}
 		case WM_PAINT:

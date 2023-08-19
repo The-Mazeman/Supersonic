@@ -154,28 +154,44 @@ void createWindowClass(const WCHAR* className, WNDPROC callbackFunction)
 	ATOM windowClassAtom = RegisterClassEx(&windowClass);
 	assert(windowClassAtom != 0);
 }
-void createWindow(const WCHAR* className, int width, int height, HWND* window)
+void createWindow(const WCHAR* className, int width, int height, HWND* window, void* lParam)
 {
 	HINSTANCE windowInstance;
 	getModuleHandle(&windowInstance);
 
     DWORD style = WS_VISIBLE | WS_OVERLAPPEDWINDOW;
-	HWND windowHandle = CreateWindowEx(0, className, L"", style, CW_USEDEFAULT, CW_USEDEFAULT, width, height, 0, 0, windowInstance, 0);
+	HWND windowHandle = CreateWindowEx(0, className, L"", style, CW_USEDEFAULT, CW_USEDEFAULT, width, height, 0, 0, windowInstance, lParam);
 	assert(windowHandle != 0);
     if(window)
     {
         *window = windowHandle;
     }
 }
-void createChildWindow(const WCHAR* className, HWND parentHandle, HWND* window)
+void createOwnedWindow(const WCHAR* className, HWND parentHandle, HWND* window, void* lParam)
+{
+	HINSTANCE windowInstance;
+	getModuleHandle(&windowInstance);
+
+	DWORD style = WS_VISIBLE;
+	HWND windowHandle = CreateWindowEx(0, className, L"", style, 0, 0, 0, 0, parentHandle, 0, windowInstance, lParam);
+	assert(windowHandle != 0);
+	*window = windowHandle;
+}
+void createChildWindow(const WCHAR* className, HWND parentHandle, HWND* window, void* lParam)
 {
 	HINSTANCE windowInstance;
 	getModuleHandle(&windowInstance);
 
     DWORD style = WS_VISIBLE | WS_CHILD;
-	HWND windowHandle = CreateWindowEx(0, className, L"", style, 0, 0, 0, 0, parentHandle, 0, windowInstance, 0);
+	HWND windowHandle = CreateWindowEx(0, className, L"", style, 0, 0, 0, 0, parentHandle, 0, windowInstance, lParam);
 	assert(windowHandle != 0);
 	*window = windowHandle;
+}
+void setState(HWND window, LPARAM lParam)
+{
+	CREATESTRUCT* createStruct = (CREATESTRUCT*)lParam;
+	LPVOID state = createStruct->lpCreateParams;
+	SetProp(window, L"state", state);
 }
 void placeWindow(HWND window, int x, int y, int width, int height)
 {
@@ -403,12 +419,10 @@ void checkExtension(WCHAR* filePath, uint64 stringLength)
 		*filePath = 0;
 	}
 }
-void getFilePath(WPARAM wParam, WCHAR* filePath, uint index)
+void getFilePath(WPARAM wParam, String* filePath, uint index)
 {
 	HDROP drop = (HDROP)wParam;
-	DragQueryFile(drop, index, filePath, 256);
-    uint64 stringLength = wcslen(filePath);
-    checkExtension(filePath, stringLength);
+	filePath->characterCount = DragQueryFile(drop, index, filePath->string, 256);
 }
 void horizontalScroll(HWND window, LPARAM lParam)
 {
