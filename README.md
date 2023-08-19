@@ -11,7 +11,14 @@ Supported Sample Rates:
 - [ ] 44.1 kHz
 - [ ] 48 kHz
 
+Supported Channel Count:
+- [x] 1
+- [x] 2
+- [ ] 4
+- [ ] 8
+      
 Supported Bit Depths:
+- [ ] 8
 - [x] 16
 - [ ] 24
       
