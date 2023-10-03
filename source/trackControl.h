@@ -11,7 +11,9 @@ struct State
 {
 	HWND topbar;
 	HWND volumeFader;
-	TrackControl* trackControl;
+	HWND audioTrack;
+	uint64 padding;
+	TrackControl trackControl;
 };
 
 void create(HWND parent, HWND* child);

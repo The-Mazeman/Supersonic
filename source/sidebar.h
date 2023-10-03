@@ -13,7 +13,7 @@ struct State
     int width;
     int padding;
 
-    HWND trackHeaderArray[16];
+    HWND trackHeaderArray[32];
 };
 
 void create(HWND parent, HWND* child);

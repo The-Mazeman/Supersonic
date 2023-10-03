@@ -3,7 +3,6 @@
 #include "platform.h"
 #include "waveFile.h"
 #include "globalState.h"
-#include "bus.h"
 
 START_SCOPE(wasapi)
 
@@ -20,6 +19,27 @@ const IID   IID_IAudioClockAdjustment = { 0xf6e4c0a0, 0x46d9, 0x4fb8, {0xbe, 0x2
 const IID   IID_IAudioCaptureClient = { 0xc8adbd64, 0xe71e, 0x48a0, {0xa4, 0xde, 0x18, 0x5c, 0x39, 0x5c, 0xd3, 0x17} };
 const IID   IID_IAudioClock = { 0xcd63314f, 0x3fba, 0x4a1b, {0x81, 0x2c, 0xef, 0x96, 0x35, 0x87, 0x28, 0xe7} };
 
+struct EndpointControllerInfo
+{
+	IAudioClient* audioClient;
+    HANDLE endpointLoaderStartEvent;
+    HANDLE endpointLoaderFinishEvent;
+	HANDLE audioCallback;
+    HANDLE exitSemaphore;
+};
+struct EndpointLoaderInfo
+{
+	HANDLE endpointLoaderStartEvent;
+	HANDLE endpointLoaderFinishEvent;
+    HANDLE outputLoaderStartEvent;
+    HANDLE exitSemaphore;
+	HANDLE bufferCompleteSemaphore;
+	IAudioRenderClient* renderClient;
+	float* inputBuffer;
+    HANDLE* trackProcessorStartEventArray;
+    uint trackCount;
+    uint padding; 
+};
 struct State
 {
 	IAudioRenderClient* renderClient;
@@ -27,21 +47,26 @@ struct State
 	IAudioClock* audioClock;
 
 	Header format;
-	HANDLE outputLoadEvent;
-	HANDLE inputLoadEvent;
+    float* inputBuffer;
+
 	HANDLE audioCallback;
-	HANDLE inputExitEvent;
-	HANDLE inputFinishSemaphore;
-	HANDLE exitLoader;
+	HANDLE endpointLoaderStartEvent;
+	HANDLE endpointLoaderFinishEvent;
+	HANDLE outputLoaderStartEvent;
+	HANDLE exitSemaphore;
+    HANDLE inputBufferCompleteSemaphore;
+    uint bufferCompleteCount;
+    uint padding;
 
 	uint64 endpointDeviceFrequency;
 	uint bufferFrameCount;
-	uint inputFinishCount;
+    uint inputLoaderCount;
 
-	RingBuffer endpointBuffer;
 	HWND cursor;
-	HWND busArray[3];
+	HWND audioEngine;
+    HWND inputLoaderArray[4];
 };
 
 void create(HWND window, HWND* wasapi);
+
 END_SCOPE

@@ -159,12 +159,12 @@ void togglePlayback(State* state)
 	HWND audioEngine = state->audioEngine;
     if(state->playing)
     {
-        SendMessage(audioEngine, WM_PAUSE, 0, 0);
+        SendMessage(audioEngine, WM_PAUSE, state->trackCount, 0);
         state->playing = 0;
     }
     else
     {
-        SendMessage(audioEngine, WM_PLAY, 0, 0);
+        SendMessage(audioEngine, WM_PLAY, state->trackCount, 0);
         state->playing = 1;
     }
 }
@@ -210,7 +210,7 @@ void createTrack(State* state, uint newTrackCount)
 void sendAudioClip(State* state, AudioClip* audioClip, uint trackNumber)
 {
 	HWND audioEngine = state->audioEngine;
-    SendMessage(audioEngine, WM_FILEDROP, (WPARAM)&audioClip, trackNumber);
+    SendMessage(audioEngine, WM_FILEDROP, (WPARAM)audioClip, trackNumber);
 
 	HWND clipArea = state->clipArea;
     SendMessage(clipArea, WM_FILEDROP, (WPARAM)audioClip, trackNumber);
@@ -320,10 +320,15 @@ void handleFileDrop(State* state, WPARAM wParam)
 
     for(uint i = 0; i != fileCount; ++i)
     {
-		AudioClip audioClip = {};
-        waveFile::create(filePathArray[i].string, &audioClip.waveFile);
+		WaveFile waveFile = {};
+		char* waveFilePointer = {};
+        waveFile::create(filePathArray[i].string, &waveFile, &waveFilePointer);
+		AudioClip* audioClip = {};
+		waveFile::createAudioClip(&waveFile, &audioClip);
+
 		freeSmallMemory(filePathArray[i].string);
-        sendAudioClip(state, &audioClip, trackNumber);
+		freeBigMemory(waveFilePointer);
+        sendAudioClip(state, audioClip, trackNumber);
         ++trackNumber;
     }
 	freeSmallMemory(filePathArray);

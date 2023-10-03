@@ -5,6 +5,7 @@
 
 START_SCOPE(waveFile)
 
-void create(WCHAR* filePath, WaveFile* waveFile);
+void create(WCHAR*, WaveFile*, char**);
+void createAudioClip(WaveFile*, AudioClip**);
 
 END_SCOPE

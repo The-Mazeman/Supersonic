@@ -2,17 +2,25 @@
 #include "header.h"
 #include "platform.h"
 #include "globalState.h"
-
+#include "dynamicArray.h"
 
 START_SCOPE(audioTrack)
 
 struct State
-{	Loader loader;
-	AudioClip clipList[4];
-	uint clipCount;
+{	
+	void* loaderTrackControlArrayHandle;
+	void* trackControlArrayHandle;
+    void* outputLoaderEventArrayHandle;
+    void* outputBusArrayHandle;
+	TrackControl* activeTrackControl;
+	void* audioClipArrayHandle;
+	HANDLE exitSemaphore;
+
+	float* inputBuffer;
 	uint effectCount;
-	TrackControl trackControl;
-	AudioEffect audioEffectList[4];
+	uint controlSet;
+	uint outputLoaderCount;
+	uint outputLoaderNumber;
 };
 
 void create(HWND window, HWND* audioTrack);

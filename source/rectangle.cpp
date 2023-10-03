@@ -7,9 +7,11 @@ LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 
 void create(HWND parent, HWND* window, WindowPosition* position)
 {
+	State* state = {};
+	allocateSmallMemory(sizeof(State), (void**)&state);
+	state->position = position;
 	createWindowClass(L"rectangleWindowClass", windowCallback);
-	createChildWindow(L"rectangleWindowClass", parent, window, position);
-	ShowWindow(*window, SW_HIDE);
+	createChildWindow(L"rectangleWindowClass", parent, window, state);
 }
 void paintWindow(HWND window)
 {
@@ -21,8 +23,9 @@ void paintWindow(HWND window)
 
 	EndPaint(window, &paintStruct);
 }
-void handleResize(WindowPosition* position, HWND window)
+void handleResize(State* state, HWND window)
 {
+	WindowPosition* position = state->position;
 	int x = position->x;
 	int y = position->y;
 	int width = position->width;
@@ -32,7 +35,7 @@ void handleResize(WindowPosition* position, HWND window)
 }
 LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 {
-	WindowPosition* position = (WindowPosition*)GetProp(window, L"state");
+	State* state = (State*)GetProp(window, L"state");
 	switch (message)
 	{
 		case WM_CREATE:
@@ -47,7 +50,7 @@ LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 		}
 		case WM_RESIZE:
 		{
-			handleResize(position, window);
+			handleResize(state, window);
 			break;
 		}
 		case WM_NCHITTEST:

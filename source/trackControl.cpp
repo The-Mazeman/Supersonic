@@ -9,7 +9,7 @@ void createLayout(State* state, HWND window, int width, int height)
 {
 	topbar::create(window, &state->topbar);
 	WindowPosition fader = {0, height / 2, width, height / 2};
-	fader::create(window, &state->volumeFader, &fader);
+	fader::create(window, &state->volumeFader, &fader, FADER_0);
 }
 void setAttribute(HWND window)
 {
@@ -19,6 +19,7 @@ void create(HWND parent, HWND* window)
 {
 	State* state = {};
 	allocateSmallMemory(sizeof(State), (void**)&state);
+	state->audioTrack = 0;
 	int width = globalState.trackControlWidth;
 	int height = globalState.trackControlHeight;
 
@@ -28,12 +29,14 @@ void create(HWND parent, HWND* window)
 	setAttribute(*window);
 	placeWindow(*window, 0, 0, width, height);
 }
-void setControl(State* state, WPARAM wParam)
+void setControl(State* state, WPARAM wParam, LPARAM lParam)
 {
-	TrackControl* trackControl = (TrackControl*)wParam;
-	state->trackControl = trackControl;
-	HWND fader = state->volumeFader;
-	SendMessage(fader, WM_SETCONTROL, (WPARAM)&trackControl->gain, 0);
+	HWND audioTrack = (HWND)wParam;
+	TrackControl* trackControl = (TrackControl*)lParam;
+	state->audioTrack = audioTrack;
+	state->trackControl = *trackControl;
+	HWND volumeFader = state->volumeFader;
+	SendMessage(volumeFader, WM_SETCONTROL, (WPARAM)&trackControl->gain, 0);
 }
 void paintWindow(HWND window)
 {
@@ -77,6 +80,35 @@ void setSizeLimit(LPARAM lParam)
 	size->ptMinTrackSize.x = 0;
 	size->ptMinTrackSize.y = 0;
 }
+void changeGain(TrackControl* trackControl, int faderValue)
+{
+	float db = (float)faderValue / 10.0f;
+
+	float gain = (float)pow(10.0f, db / 20.0f);
+	trackControl->gain = _mm256_broadcast_ss(&gain);
+}
+void faderMove(State* state, WPARAM wParam, LPARAM lParam)
+{
+	uint faderId = (uint)wParam;
+	int faderValue = (int)lParam;
+	TrackControl* trackControl = &state->trackControl;
+	switch(faderId)
+	{
+		case FADER_0:
+		{
+			changeGain(trackControl, faderValue);
+			break;
+		}
+		case FADER_1:
+		{
+		}
+	}
+	HWND audioTrack = state->audioTrack;
+	if(audioTrack)
+	{
+		SendMessage(audioTrack, WM_SETCONTROL, (WPARAM)trackControl, 0);
+	}
+}
 LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 {
 	State* state = (State*)GetProp(window, L"state");
@@ -94,7 +126,12 @@ LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 		}
 		case WM_SETCONTROL:
 		{
-			setControl(state, wParam);
+			setControl(state, wParam, lParam);
+			break;
+		}
+		case WM_FADERMOVE:
+		{
+			faderMove(state, wParam, lParam);
 			break;
 		}
 		case WM_GETMINMAXINFO:

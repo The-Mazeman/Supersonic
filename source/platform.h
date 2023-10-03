@@ -12,6 +12,7 @@ void createThread(LPTHREAD_START_ROUTINE startRoutine, LPVOID parameter, DWORD* 
 void createEvent(BOOL manualResetRequired, HANDLE* handle);
 void createMutex(int initialState, HANDLE* handle);
 void createSemaphore(uint initialCount, uint maximumCount, HANDLE* handle);
+void waitForSemaphore(HANDLE semaphore);
 
 void getProcessHeap(HANDLE* handle);
 void allocateSmallMemory(uint64 size, void** memory);
@@ -61,4 +62,6 @@ void horizontalScroll(HWND window, LPARAM lParam);
 void getTrackNumber(HWND window, int* trackNumber, int height);
 
 void boundCheck(RingBuffer* ringBuffer, void** bufferPointer, uint offset);
-void checkCompletion(uint* inputFinishCount, uint trackCount, HANDLE inputSemaphore);
+void setEventArray(HANDLE* eventArray, uint eventCount);
+void checkCompletion(HANDLE event, uint totalCount);
+

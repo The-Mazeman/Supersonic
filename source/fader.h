@@ -10,13 +10,12 @@ struct State
 	WindowPosition position;
 	WindowPosition rectanglePosition;
 	HWND rectangle;
-	HWND parent;
-	__m256* output;
 	int upperLimit;
 	int lowerLimit;
-
+	uint faderId;
+	uint padding;
 };
 
-void create(HWND parent, HWND* window, WindowPosition* position);
+void create(HWND, HWND*, WindowPosition*, uint);
 
 END_SCOPE

@@ -5,9 +5,9 @@ START_SCOPE(wasapi)
 
 LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 
-uint getAudioEngineSubFormat(WAVEFORMATEXTENSIBLE* audioEngineFormat)
+ushort getAudioEngineSubFormat(WAVEFORMATEXTENSIBLE* audioEngineFormat)
 {
-	uint format = 0;
+	ushort format = 0;
 	if (IsEqualGUID(audioEngineFormat->SubFormat, KSDATAFORMAT_SUBTYPE_IEEE_FLOAT))
 	{
 		format = 3;
@@ -47,23 +47,30 @@ void setupEndpoint(State* state)
 	result = audioClient->lpVtbl->GetMixFormat(audioClient, (WAVEFORMATEX**)&audioEngineFormat);
 	assert(result == S_OK);
 
-	state->format.type = (ushort)getAudioEngineSubFormat(audioEngineFormat);
-	state->format.channelCount = audioEngineFormat->Format.nChannels;
-	state->format.sampleRate = audioEngineFormat->Format.nSamplesPerSec;
-	state->format.byteRate = audioEngineFormat->Format.nAvgBytesPerSec;
-	state->format.blockAlign = audioEngineFormat->Format.nBlockAlign;
-	state->format.bitDepth = audioEngineFormat->Format.wBitsPerSample;
+	audioEngineFormat->SubFormat = KSDATAFORMAT_SUBTYPE_IEEE_FLOAT;
+    state->format.type = 3;
 
-	result = audioClient->lpVtbl->Initialize(audioClient, AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_EVENTCALLBACK, 426700, 0, (WAVEFORMATEX*)audioEngineFormat, 0);
+	state->format.channelCount = 2;
+    audioEngineFormat->Format.nChannels = 2;
+
+	state->format.sampleRate = 48000;
+    audioEngineFormat->Format.nSamplesPerSec = 48000;
+	state->format.byteRate = 48000 * 2 * 4;
+    audioEngineFormat->Format.nAvgBytesPerSec = 48000 * 2 * 4;
+	state->format.blockAlign = 8;
+    audioEngineFormat->Format.nBlockAlign = 8;
+	state->format.bitDepth = 32;
+    audioEngineFormat->Format.wBitsPerSample = 32;
+
+	uint bufferFrameCount = 1024;
+	uint64 bufferDuration = (bufferFrameCount * 10000000ull) / 48000;
+	bufferDuration *= 2;
+
+	result = audioClient->lpVtbl->Initialize(audioClient, AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_EVENTCALLBACK, (REFERENCE_TIME)bufferDuration, 0, (WAVEFORMATEX*)audioEngineFormat, 0);
 	assert(result == S_OK);
 
 	HANDLE audioCallback = state->audioCallback;
 	result = audioClient->lpVtbl->SetEventHandle(audioClient, audioCallback);
-	assert(result == S_OK);
-
-
-	uint32 bufferFrameCount;
-	result = audioClient->lpVtbl->GetBufferSize(audioClient, &bufferFrameCount);
 	assert(result == S_OK);
 
 	state->bufferFrameCount = bufferFrameCount;
@@ -86,144 +93,205 @@ void setupEndpoint(State* state)
 	state->audioClock = audioClock;
 	state->endpointDeviceFrequency = frequency;
 }
-void createOutputBuffer(State* state)
+void createInputBuffer(State* state)
 {
 	uint bufferFrameCount = state->bufferFrameCount;
 	uint bufferFrameSize = state->format.blockAlign;
 	uint bufferMemorySize = bufferFrameCount * bufferFrameSize;
 
-	char* buffer;
+	float* buffer = {};
 	allocateSmallMemory(bufferMemorySize, (void**)&buffer);
 
-	state->endpointBuffer.start = buffer;
-	state->endpointBuffer.end = buffer + bufferMemorySize;
+	state->inputBuffer = buffer;
 }
-void sendLoadSignal(IAudioClient* audioClient, HANDLE loadEvent, uint frameCount)
+void sendLoadSignal(IAudioClient* audioClient, HANDLE endpointLoaderFinishEvent, HANDLE loadEvent, uint frameCount)
 {
 	uint paddingFrameCount;
 	audioClient->lpVtbl->GetCurrentPadding(audioClient, &paddingFrameCount);
 	if (paddingFrameCount < frameCount)
 	{
 		SetEvent(loadEvent);
+		WaitForSingleObject(endpointLoaderFinishEvent, INFINITE);
 	}
 }
 DWORD WINAPI endpointController(LPVOID parameter)
 {
-	State* state = (State*)parameter;
-	IAudioClient* audioClient = state->audioClient;
-	HANDLE loadEvent = state->outputLoadEvent;
-	HANDLE audioCallback = state->audioCallback;
-	uint frameCount = state->bufferFrameCount / 2;
-	while (1)
+	EndpointControllerInfo* controller = (EndpointControllerInfo*)parameter;
+	IAudioClient* audioClient = controller->audioClient;
+	HANDLE loadEvent = controller->endpointLoaderStartEvent;
+	HANDLE endpointLoaderFinishEvent = controller->endpointLoaderFinishEvent;
+	ResetEvent(endpointLoaderFinishEvent);
+	HANDLE audioCallback = controller->audioCallback;
+    HANDLE exitSemaphore = controller->exitSemaphore;
+    HANDLE waitHandle[] = {audioCallback, exitSemaphore};
+	uint frameCount = globalState.audioEndpointFrameCount;
+    uint running = 1;
+	while (running)
 	{
-		uint signal = WaitForSingleObject(audioCallback, INFINITE);
+		uint signal = WaitForMultipleObjects(2, waitHandle, 0, INFINITE);
 		switch (signal)
 		{
 			case WAIT_OBJECT_0:
 			{
-				sendLoadSignal(audioClient, loadEvent, frameCount);
+				sendLoadSignal(audioClient, endpointLoaderFinishEvent, loadEvent, frameCount);
+                break;
 			}
+			case WAIT_OBJECT_0 + 1:
+			{
+                freeSmallMemory(controller);
+                running = 0;
+            }
 		}
 	}
 	return 0;
 }
-void create(HWND window, HWND* wasapi)
+void create(HWND parent, HWND* window)
 {
 	State* state = {};
 	allocateSmallMemory(sizeof(State), (void**)&state);
-
-	createEvent(0, &state->audioCallback);
-	createEvent(0, &state->inputLoadEvent);
-	createEvent(0, &state->outputLoadEvent);
-	createEvent(0, &state->inputExitEvent);
-	createEvent(0, &state->exitLoader);
-	createSemaphore(0, 3, &state->inputFinishSemaphore);
+	state->audioEngine = parent;
+    state->inputLoaderCount = 0;
+    createEvent(0, &state->audioCallback);
+    createEvent(0, &state->endpointLoaderStartEvent);
+    createEvent(0, &state->endpointLoaderFinishEvent);
+    createEvent(0, &state->outputLoaderStartEvent);
+    createSemaphore(0, 2, &state->exitSemaphore);
+	createSemaphore(0, 3, &state->inputBufferCompleteSemaphore);
 
 	setupEndpoint(state);
-	createOutputBuffer(state);
-	createThread(endpointController, state, 0);
-
-	bus::create(window, &state->busArray[0]);
-
 	createWindowClass(L"wasapiWindowClass", windowCallback);
-	createChildWindow(L"wasapiWindowClass", window, wasapi, state);
+	createChildWindow(L"wasapiWindowClass", parent, window, state);
 }
 void setCursor(State* state, WPARAM wParam)
 {
 	HWND cursor = (HWND)wParam;
 	state->cursor = cursor;
 }
-void load(float** source, float** destination, uint iterationCount)
+void load(float* source, float* destination, uint iterationCount)
 {
-	__m256* sourceAVX = (__m256*)*source;
-	__m256* destinationAVX2 = (__m256*)*destination;
+	__m256* sourceAVX = (__m256*)source;
+	__m256* destinationAVX2 = (__m256*)destination;
 	for (uint i = 0; i != iterationCount; ++i)
 	{
 		_mm256_store_ps((float*)destinationAVX2, *sourceAVX);
 		++destinationAVX2;
 		++sourceAVX;
 	}
-	*source = (float*)sourceAVX;
 }
-void loadOutput(IAudioRenderClient* renderClient, float** outputBuffer, uint iterationCount, uint frameCount)
+void loadOutput(IAudioRenderClient* renderClient, float* inputBuffer, uint iterationCount, uint frameCount)
 {
 	float* audioEngineFrame = {};
 	HRESULT result;
 	result = renderClient->lpVtbl->GetBuffer(renderClient, frameCount, (BYTE**)&audioEngineFrame);
-	load(outputBuffer, &audioEngineFrame, iterationCount);
+	load(inputBuffer, audioEngineFrame, iterationCount);
 	renderClient->lpVtbl->ReleaseBuffer(renderClient, frameCount, 0);
+}
+void setTrackEvent(HANDLE* eventArray, uint trackCount)
+{
+	for (uint i = 0; i != trackCount; ++i)
+	{
+		SetEvent(eventArray[i]);
+	}
 }
 DWORD WINAPI endpointLoader(LPVOID parameter)
 {
-	State* state = (State*)parameter;
+	EndpointLoaderInfo* endpointLoaderInfo = (EndpointLoaderInfo*)parameter;
+    float* inputBuffer = endpointLoaderInfo->inputBuffer;
 
-	HANDLE outputLoadEvent = state->outputLoadEvent;
-	HANDLE inputLoadEvent = state->inputLoadEvent;
-	HANDLE exitEvent = state->exitLoader;
-	HANDLE inputExitEvent = state->inputExitEvent;
-	HANDLE inputFinishSemaphore = state->inputFinishSemaphore;
-	uint* inputFinishCount = &state->inputFinishCount;
-
-	IAudioRenderClient* renderClient = state->renderClient;
-	RingBuffer* inputBuffer = &state->endpointBuffer;
-	float* buffer = (float*)inputBuffer->start;
-	uint loadFrameCount = globalState.audioEndpointFrameCount / 2;
+	uint loadFrameCount = globalState.audioEndpointFrameCount;
 	uint framesPerAVX2 = 32 / 8;
 	uint iterationCount = loadFrameCount / framesPerAVX2;
-	HANDLE waitHandle[] = {exitEvent, outputLoadEvent};
-	uint running = 1;
-	while(running)
-	{
-		uint signal = WaitForMultipleObjects(2, waitHandle, 0, INFINITE);
-		checkCompletion(inputFinishCount, 1, inputFinishSemaphore);
-		switch(signal) 
-		{
-			case WAIT_OBJECT_0:
-			{
-				running = 0;
-				SetEvent(inputExitEvent);
-				checkCompletion(inputFinishCount, 1, inputFinishSemaphore);
-				break;
-			}
-			case WAIT_OBJECT_0 + 1:
-			{
-				loadOutput(renderClient, &buffer, iterationCount, loadFrameCount);
-				boundCheck(inputBuffer, (void**)&buffer, 0);
-				SetEvent(inputLoadEvent);
-			}
-		}
-	}
+
+    IAudioRenderClient* renderClient = endpointLoaderInfo->renderClient;
+    HANDLE outputLoaderStartEvent = endpointLoaderInfo->outputLoaderStartEvent;
+    HANDLE completeSemaphore = endpointLoaderInfo->bufferCompleteSemaphore;
+    HANDLE* trackProcessorStartEventArray = endpointLoaderInfo->trackProcessorStartEventArray;
+    uint trackCount = endpointLoaderInfo->trackCount;
+
+    HANDLE endpointLoaderStartEvent = endpointLoaderInfo->endpointLoaderStartEvent;
+    HANDLE endpointLoaderFinishEvent = endpointLoaderInfo->endpointLoaderFinishEvent;
+    HANDLE exitSemaphore = endpointLoaderInfo->exitSemaphore;
+    HANDLE waitHandle[] = {endpointLoaderStartEvent, exitSemaphore};
+    uint running = 1;
+    while(running)
+    {
+        uint signal = WaitForMultipleObjects(2, waitHandle, 0, INFINITE);
+        switch(signal)
+        {
+            case WAIT_OBJECT_0:
+            {
+				WaitForSingleObject(completeSemaphore, INFINITE);
+                setEventArray(trackProcessorStartEventArray, trackCount);
+                loadOutput(renderClient, inputBuffer, iterationCount, loadFrameCount);
+                break;
+            }
+            case WAIT_OBJECT_0 + 1:
+            {
+                freeSmallMemory(endpointLoaderInfo);
+                running = 0;
+            }
+        }
+        SetEvent(outputLoaderStartEvent);
+        SetEvent(endpointLoaderFinishEvent);
+    }
 	return 0;
+}
+void loadSilence(IAudioRenderClient* renderClient, uint frameCount)
+{
+	float* audioEngineFrame = {};
+	renderClient->lpVtbl->GetBuffer(renderClient, frameCount, (BYTE**)&audioEngineFrame);
+	renderClient->lpVtbl->ReleaseBuffer(renderClient, frameCount, AUDCLNT_BUFFERFLAGS_SILENT);
+}
+DWORD WINAPI dummyLoader(LPVOID parameter)
+{
+	EndpointLoaderInfo* endpointLoaderInfo = (EndpointLoaderInfo*)parameter;
+    HANDLE endpointLoaderStartEvent = endpointLoaderInfo->endpointLoaderStartEvent;
+    HANDLE endpointLoaderFinishEvent = endpointLoaderInfo->endpointLoaderFinishEvent;
+    HANDLE exitSemaphore = endpointLoaderInfo->exitSemaphore;
+    IAudioRenderClient* renderClient = endpointLoaderInfo->renderClient;
+
+	uint loadFrameCount = globalState.audioEndpointFrameCount;
+    HANDLE waitHandle[] = {endpointLoaderStartEvent, exitSemaphore};
+    uint running = 1;
+    while(running)
+    {
+        uint signal = WaitForMultipleObjects(2, waitHandle, 0, INFINITE);
+        switch(signal)
+        {
+            case WAIT_OBJECT_0:
+            {
+                loadSilence(renderClient, loadFrameCount);
+				SetEvent(endpointLoaderFinishEvent);
+                break;
+            }
+            case WAIT_OBJECT_0 + 1:
+            {
+                freeSmallMemory(endpointLoaderInfo);
+                running = 0;
+            }
+        }
+    }
+    return 0;
+}
+void startInputLoader(State* state)
+{
+	BufferInfo bufferInfo = {};
+	bufferInfo.buffer = state->inputBuffer;
+	bufferInfo.bufferCompleteSemaphore = state->inputBufferCompleteSemaphore;
+	bufferInfo.loaderCount = state->inputLoaderCount;
+
+    HANDLE outputLoaderStartEvent = state->outputLoaderStartEvent;
+    HWND masterBus = state->inputLoaderArray[0];
+    SendMessage(masterBus, WM_STARTOUTPUTLOADER, (WPARAM)&bufferInfo, (LPARAM)outputLoaderStartEvent);
 }
 void startPlayback(State* state, HWND window)
 {
-	createThread(endpointLoader, state, 0);
-
+	notUsing(window);
 	IAudioClient* audioClient = state->audioClient;
 	HWND cursor = state->cursor;
 	SendMessage(cursor, WM_PLAY, 0, 0);
 	audioClient->lpVtbl->Start(audioClient);
-	SetTimer(window, 1, 15, 0);
+	//SetTimer(window, 1, 15, 0);
 }
 void flushBuffer(State* state)
 {
@@ -237,14 +305,24 @@ void flushBuffer(State* state)
 }
 void stopPlayback(State* state, HWND window)
 {
-	SetEvent(state->exitLoader);
-
-	flushBuffer(state);
 	IAudioClient* audioClient = state->audioClient;
+	audioClient->lpVtbl->Stop(audioClient); 
+
+    HANDLE exitSemaphore = state->exitSemaphore;
+    ReleaseSemaphore(exitSemaphore, 2, 0);
+    waitForSemaphore(exitSemaphore);
+
+	audioClient->lpVtbl->Start(audioClient); 
+	flushBuffer(state);
 	audioClient->lpVtbl->Stop(audioClient); 
 	audioClient->lpVtbl->Reset(audioClient); 
 
 	KillTimer(window, 1);
+	if(state->inputLoaderCount)
+	{
+		state->inputLoaderCount = 0;
+		freeSmallMemory(state->inputBuffer);
+	}
 }
 void handleTimer(State* state)
 {
@@ -261,34 +339,56 @@ void handleTimer(State* state)
 	HWND cursor = state->cursor;
 	SendMessage(cursor, WM_TIMER, (WPARAM)timeElapsedInMilliseconds, 0);
 }
-
-void startLoader(State* state)
+void startOutputLoader(State* state, WPARAM wParam, LPARAM lParam)
 {
-	Loader busLoader = {};
-	busLoader.buffer = state->endpointBuffer;
-	busLoader.loadEvent = state->inputLoadEvent;
-	busLoader.exitSemaphore = state->inputExitEvent;
-	busLoader.finishSemaphore = state->inputFinishSemaphore;
-	busLoader.finishCount = &state->inputFinishCount;
-	busLoader.trackCount = 1;
-	busLoader.trackNumber = 0;
+	EndpointControllerInfo* endpointControllerInfo = {};
+    allocateSmallMemory(sizeof(EndpointControllerInfo), (void**)&endpointControllerInfo);
+	endpointControllerInfo->audioCallback = state->audioCallback;
+	endpointControllerInfo->audioClient = state->audioClient;
+	endpointControllerInfo->endpointLoaderStartEvent = state->endpointLoaderStartEvent;
+	endpointControllerInfo->endpointLoaderFinishEvent = state->endpointLoaderFinishEvent;
+	endpointControllerInfo->exitSemaphore = state->exitSemaphore;
 
-	HWND masterBus = state->busArray[0];
-	SendMessage(masterBus, WM_STARTLOADER, (WPARAM)&busLoader, 0);
+    createThread(endpointController, endpointControllerInfo, 0);
 
-	for(uint i = 0; i != 2; ++i)
-	{
-		SetEvent(state->inputLoadEvent);
-		WaitForSingleObject(state->inputFinishSemaphore, INFINITE);
-	}
-	ReleaseSemaphore(state->inputFinishSemaphore, 1, 0);
-	state->inputFinishCount = 1;
-	SetEvent(state->outputLoadEvent);
+	EndpointLoaderInfo* endpointLoaderInfo = {};
+    allocateSmallMemory(sizeof(EndpointLoaderInfo), (void**)&endpointLoaderInfo);
+	endpointLoaderInfo->endpointLoaderStartEvent = state->endpointLoaderStartEvent;
+	endpointLoaderInfo->endpointLoaderFinishEvent = state->endpointLoaderFinishEvent;
+	endpointLoaderInfo->exitSemaphore = state->exitSemaphore;
+	endpointLoaderInfo->renderClient = state->renderClient;
+
+    uint inputLoaderCount = state->inputLoaderCount;
+    if(inputLoaderCount == 0)
+    {
+        createThread(dummyLoader, endpointLoaderInfo, 0);
+        return;
+    }
+
+    createInputBuffer(state);
+
+	endpointLoaderInfo->inputBuffer = state->inputBuffer;
+	endpointLoaderInfo->bufferCompleteSemaphore = state->inputBufferCompleteSemaphore;
+	endpointLoaderInfo->trackProcessorStartEventArray = (HANDLE*)wParam;
+	endpointLoaderInfo->trackCount = (uint)lParam;
+	endpointLoaderInfo->outputLoaderStartEvent = state->outputLoaderStartEvent;
+
+    createThread(endpointLoader, endpointLoaderInfo, 0);
 }
-void assignBus(State* state, WPARAM wParam, LPARAM lParam)
+void setInputLoader(State* state, WPARAM wParam)
 {
-	HWND bus = state->busArray[lParam];
-	SendMessage(bus, WM_ASSIGNBUS, wParam, 0);
+	uint inputLoaderCount = state->inputLoaderCount;
+	state->inputLoaderArray[inputLoaderCount] = (HWND)wParam;
+	++state->inputLoaderCount;
+}
+void sendInputLoader(State* state)
+{
+	HWND* inputLoaderArray = state->inputLoaderArray;
+	uint inputLoaderCount = state->inputLoaderCount;
+	for (uint i = 0; i != inputLoaderCount; ++i)
+	{
+		SendMessage(inputLoaderArray[i], WM_SETOUTPUTLOADER, 0, 0);
+	}
 }
 LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 {
@@ -305,14 +405,29 @@ LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 			setCursor(state, wParam);
 			break;
 		}
+		case WM_SENDINPUTLOADER:
+		{
+			sendInputLoader(state);
+			break;
+		}
+		case WM_SETINPUTLOADER:
+		{
+			setInputLoader(state, wParam);
+			break;
+		}
 		case WM_TIMER:
 		{
 			handleTimer(state);
 			break;
 		}
-		case WM_STARTLOADER:
+		case WM_STARTINPUTLOADER:
+        {
+            startInputLoader(state);
+            break;
+        }
+		case WM_STARTOUTPUTLOADER:
 		{
-			startLoader(state);
+			startOutputLoader(state, wParam, lParam);
 			break;
 		}
 		case WM_PLAY:
@@ -324,10 +439,6 @@ LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 		{
 			stopPlayback(state, window);
 			break;
-		}
-		case WM_ASSIGNBUS:
-		{
-			assignBus(state, wParam, lParam);
 		}
 	}
 	return DefWindowProc(window, message, wParam, lParam);

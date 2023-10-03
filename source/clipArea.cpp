@@ -72,7 +72,7 @@ void moveCursor(State* state, WPARAM wParam)
 	placeWindow(timelineCursor, cursorX, 0, width, height);
 
 	sint64 framesPerPixel = globalState.framesPerPixel;
-	uint loadFrameCount = globalState.audioEndpointFrameCount / 2;
+	uint loadFrameCount = globalState.audioEndpointFrameCount;
 	uint64 readCursor = cursorX * (uint64)framesPerPixel;
 	readCursor /= loadFrameCount;
 	globalState.readCursor = readCursor;

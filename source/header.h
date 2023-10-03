@@ -1,9 +1,9 @@
 #pragma once
 
 #pragma warning(disable: 5045)
-#if 0
 #pragma warning(disable: 4100)
 #pragma warning(disable: 4189)
+#if 0
 #endif
 
 #define WIN32_LEAN_AND_MEAN  
@@ -60,19 +60,35 @@
 #define START_SCOPE(x) namespace x {
 #define END_SCOPE }
 
+#define FADER_0 0
+#define FADER_1 1
+#define FADER_2 2
+#define FADER_3 3
+
 #define WM_RESIZE 0x8001
 #define WM_PLAY 0x8002
 #define WM_PAUSE 0x8003
-#define WM_STARTLOADER 0x8004
+#define WM_STARTOUTPUTLOADER 0x8004
 #define WM_FILEDROP 0x8005
 #define WM_CREATETRACK 0x8006
-#define WM_ASSIGNBUS 0x8007
+#define WM_SETOUTPUT 0x8007
 #define WM_MOVECURSOR 0x8008
 #define WM_GETCURSOR 0x8009
 #define WM_SETDROP 0x800a
 #define WM_SETCONTROL 0x800b
+#define WM_SETINPUT 0x800c
+#define WM_STARTINPUTLOADER 0x800d
+#define WM_SETTRACKARRAY 0x800e
+#define WM_SETOUTPUTLOADER 0x800f
+#define WM_SETINPUTLOADER 0x8010
+#define WM_SENDINPUTLOADER 0x8011
+#define WM_SENDOUTPUTLOADER 0x8012
+#define WM_CREATEBUFFER 0x8013
+#define WM_SENDCONTROL 0x8014
+#define WM_FADERMOVE 0x8015
 
 #define AVX2_FRAME_SIZE 32
+
 typedef void (*ProcessFunction)(float*, uint, void*);
 struct WindowPosition
 {
@@ -104,18 +120,18 @@ struct WaveFile
 {
 	Header header;
 	uint64 frameCount;
-	float* sampleChunk;
 	String name;
+	float* sampleChunk;
 };
 struct AudioClip
 {
 	uint64 startFrame;
 	uint64 endFrame;
+	uint64 frameCount;
 	uint startOffset;
 	uint endOffset;
 
 	WaveFile waveFile;
-	uint64 frameCount;
 };
 struct AudioEffect
 {
@@ -127,17 +143,49 @@ struct TrackControl
 	__m256 gain;
 	__m256 pan;
 };
-struct Loader
+struct BufferInfo
 {
-	RingBuffer buffer;
-	HANDLE loadEvent;
-	HANDLE exitSemaphore;
-	HANDLE finishSemaphore;
-	uint* finishCount;
-
-	uint trackCount;
-	uint trackNumber;
+	float* buffer;
+	HANDLE bufferCompleteSemaphore;
+	uint loaderCount;
+	uint loaderPosition;
 };
-
+struct BusLoaderInfo
+{
+	TrackControl trackControl;
+	BufferInfo outputBufferInfo;
+	float* inputBuffer;
+    HANDLE exitSemaphore;
+    HANDLE startBusLoaderEvent;
+	uint64 padding1;
+	uint64 padding2;
+};
+struct MasterBusLoaderInfo
+{
+	BufferInfo outputBufferInfo;
+	float* inputBuffer;
+    HANDLE exitSemaphore;
+    HANDLE startBusLoaderEvent;
+    HANDLE loadOutputEvent;
+};
+struct BusProcessorInfo
+{
+    HANDLE bufferCompleteSemaphore;
+    HANDLE exitSemaphore;
+    float* inputBuffer;
+    HANDLE* busLoaderStartEventArray;
+    uint outputLoaderCount;
+    uint inputLoaderCount;
+};
+struct TrackProcessorInfo
+{
+    HANDLE startTrackProcessorEvent;
+    HANDLE exitSemaphore;
+    AudioClip** clipList;
+    float* inputBuffer;
+    HANDLE* busLoaderStartEventArray;
+    uint outputLoaderCount;
+    uint clipCount;
+};
 
 

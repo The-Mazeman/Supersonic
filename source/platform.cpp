@@ -462,11 +462,33 @@ void boundCheck(RingBuffer* ringBuffer, void** bufferPointer, uint offset)
 		*bufferPointer = bufferStart;
 	}
 }
-void checkCompletion(uint* inputFinishCount, uint trackCount, HANDLE inputSemaphore)
+void setEventArray(HANDLE* eventArray, uint eventCount)
 {
-	while (*inputFinishCount != trackCount)
+    for(uint i = 0; i != eventCount; ++i)
+    {
+        SetEvent(eventArray[i]);
+    }
+}
+void waitForSemaphore(HANDLE semaphore)
+{
+    while(1)
+    {
+        DWORD result = WaitForSingleObject(semaphore, 0);
+        if(result == WAIT_TIMEOUT)
+        {
+            break;
+        }
+        ReleaseSemaphore(semaphore, 1, 0);
+        Sleep(30);
+    }
+
+}
+void checkCompletion(HANDLE event, uint totalCount)
+{
+	uint currentCount = 1;
+	while (currentCount != totalCount)
 	{
-		WaitForSingleObject(inputSemaphore, INFINITE);
+		WaitForSingleObject(event, INFINITE);
+		++currentCount;
 	}
-	*inputFinishCount = 0;
 }

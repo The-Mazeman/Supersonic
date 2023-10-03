@@ -2,29 +2,29 @@
 #include "header.h"
 #include "platform.h"
 #include "globalState.h"
+#include "dynamicArray.h"
 
-START_SCOPE(bus)
+START_SCOPE(masterBus)
 
 struct State
 {
 	HANDLE bufferCompleteSemaphore;
-    HANDLE busLoaderStartEventArray[4];
     HANDLE exitSemaphore;
-    HWND inputLoaderArray[4];
+    HANDLE loadOutputEvent;
+    HANDLE startBusLoaderEvent;
 
+    HWND wasapi;
+    void* inputLoaderArrayHandle;
 	float* inputBuffer;
 
-	uint inputLoaderCount;
 	uint outputLoaderCount;
 	uint outputLoaderNumber;
 	uint inputBufferCompleteCount;
     uint outputSet;
-    uint outputBusArray[2];
-    uint outputBusCount;
-    uint inputSet;
+	uint inputSet;
 	uint padding;
 };
 
-void create(HWND parent, HWND* bus);
+void create(HWND parent, HWND* bus, HWND wasapi);
 
 END_SCOPE

@@ -102,7 +102,7 @@ void handleMove(State* state, LPARAM lParam)
 	uint64 frameCount = audioClip->frameCount;
 	uint64 endFrame = startFrame + frameCount;
 
-	uint loadFrameCount = globalState.audioEndpointFrameCount / 2; 
+	uint loadFrameCount = globalState.audioEndpointFrameCount; 
 	state->audioClip->startFrame = startFrame / loadFrameCount;
 	state->audioClip->endFrame = endFrame / loadFrameCount;
 }

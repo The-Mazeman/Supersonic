@@ -40,7 +40,7 @@ void handleResize(HWND window, LPARAM lParam)
 void handleMouseLeftClick(State* state)
 {
 	HWND audioTrack = state->audioTrack;
-	SendMessage(audioTrack, WM_SETCONTROL, 0, 0);
+	SendMessage(audioTrack, WM_SENDCONTROL, 0, 0);
 }
 LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 {

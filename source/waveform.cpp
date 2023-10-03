@@ -15,7 +15,6 @@ void drawSingleSample(HDC deviceContext, int x, int y, int sampleHeight)
 	MoveToEx(deviceContext, x, y, 0);
 	LineTo(deviceContext, x, y - sampleHeight);
 }
-
 void getMaximumAVX2Frame(float** waveFileFramePointer, uint64 frameCount, __m256* max)
 {
 	uint framesPerIteration = 4;
@@ -57,14 +56,14 @@ void drawWaveformAverage(HDC deviceContext, RECT* invalidRectangle, float* wavef
 	sint64 frameOffset = x0 * framesPerPixel;
 	waveform += frameOffset * 2;
 
-	float scaleFactor = (float)centerY;
+	float scaleFactor = (float)centerY + 20;
 
 	for (int i = x0; i != x1; ++i)
 	{
 		float maxFrame[2] = {};
 		getMaximumFrame(&waveform, (uint64)framesPerPixel, maxFrame);
 
-		int sampleHeight = (int)(maxFrame[0] / scaleFactor);
+		int sampleHeight = (int)(maxFrame[0] * scaleFactor);
 		drawMirroredSample(deviceContext, i, centerY, sampleHeight);
 	}
 }
@@ -75,7 +74,7 @@ void drawWaveform(HDC deviceContext, RECT* invalidRectangle, float* waveFile)
 
 	int height = globalState.trackHeight;
 	int centerY = height / 2;
-	float scaleFactor = (float)centerY;
+	float scaleFactor = (float)centerY * 10;
 
 	sint64 framesPerPixel = globalState.framesPerPixel;
 	sint64 frameOffset = x0 * framesPerPixel;

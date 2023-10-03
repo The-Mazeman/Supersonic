@@ -21,7 +21,7 @@ struct GlobalState
 	uint trackCount;
 
 	uint audioEndpointFrameCount;
-	int padding;
+	uint padding;
 	uint64 readCursor;
 };
 extern GlobalState globalState;

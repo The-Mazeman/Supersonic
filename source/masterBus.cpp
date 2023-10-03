@@ -1,30 +1,29 @@
 #include "header.h"
-#include "bus.h"
+#include "masterBus.h"
 
-START_SCOPE(bus)
+START_SCOPE(masterBus)
 
 LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 
-void create(HWND parent, HWND* bus)
+void create(HWND parent, HWND* bus, HWND wasapi)
 {
 	State* state = {};
 	allocateSmallMemory(sizeof(State), (void**)&state);
-	state->inputLoaderCount = 0;
-	state->inputBufferCompleteCount = 0;
+    state->wasapi = wasapi;
 	state->outputLoaderCount = 0;
 	state->outputLoaderNumber = 0;
-    state->outputBusArray[0] = 0;
-    state->outputBusCount = 1;
 	state->inputBuffer = 0;
     state->outputSet = 0;
-	state->inputSet = 0;
+    state->inputSet = 0;
+	state->inputBufferCompleteCount = 0;
 
+	createArray(&state->inputLoaderArrayHandle, sizeof(HWND));
+	createEvent(0, &state->startBusLoaderEvent);
 	createSemaphore(0, 10, &state->exitSemaphore);
 	createSemaphore(0, 10, &state->bufferCompleteSemaphore);
-	createEvent(0, &state->busLoaderStartEventArray[0]);
 
-	createWindowClass(L"busWindowClass", windowCallback);
-	createChildWindow(L"busWindowClass", parent, bus, state);
+	createWindowClass(L"masterBusWindowClass", windowCallback);
+	createChildWindow(L"masterBusWindowClass", parent, bus, state);
 }
 void setTrackEvent(HANDLE* eventArray, uint trackCount)
 {
@@ -39,34 +38,35 @@ void startAccumulator(HANDLE accumulatorEvent)
 }
 void fillSample(float* input, float* output, uint iterationCount, uint inputLoaderCount)
 {
-	__m256* inputAVX2 = (__m256*)input;
-	__m256* outputAVX2 = (__m256*)output;
+	__m256* sourceAVX2 = (__m256*)input;
+	__m256* destinationAVX2 = (__m256*)output;
 	for(uint i = 0; i != iterationCount; ++i)
 	{
-		_mm256_store_ps((float*)outputAVX2, *inputAVX2);
-		outputAVX2 += inputLoaderCount;
-		++inputAVX2;
+		_mm256_store_ps((float*)destinationAVX2, *sourceAVX2);
+		destinationAVX2 += inputLoaderCount;
+		++sourceAVX2;
 	}
 }
-DWORD WINAPI busLoader(LPVOID parameter)
+DWORD WINAPI masterBusLoader(LPVOID parameter)
 {
-    BusLoaderInfo* busLoaderInfo = (BusLoaderInfo*)parameter;
+    MasterBusLoaderInfo* masterBusLoaderInfo = (MasterBusLoaderInfo*)parameter;
 
-	BufferInfo* outputBufferInfo = &busLoaderInfo->outputBufferInfo;
-    uint bufferOffset = outputBufferInfo->loaderPosition * AVX2_FRAME_SIZE;
-	uint loaderCount = outputBufferInfo->loaderCount;
-	float* outputBuffer = (float*)((char*)outputBufferInfo->buffer + bufferOffset);
-
-	float* inputBuffer = busLoaderInfo->inputBuffer;
-	HANDLE completeSemaphore = outputBufferInfo->bufferCompleteSemaphore;
+	float* inputBuffer = masterBusLoaderInfo->inputBuffer;
+	BufferInfo* bufferInfo = &masterBusLoaderInfo->outputBufferInfo;
+    float* outputBuffer = bufferInfo->buffer;
+	HANDLE completeSemaphore = bufferInfo->bufferCompleteSemaphore;
 
 	uint loadFrameCount = globalState.audioEndpointFrameCount;
 	uint framesPerAVX2 = 32 / 8;
 	uint iterationCount = loadFrameCount / framesPerAVX2;
 
-    HANDLE startBusLoaderEvent = busLoaderInfo->startBusLoaderEvent;
-    HANDLE exitSemaphore = busLoaderInfo->exitSemaphore;
+    HANDLE loadOutputEvent = masterBusLoaderInfo->loadOutputEvent;
+	SetEvent(loadOutputEvent);
+
+    HANDLE startBusLoaderEvent = masterBusLoaderInfo->startBusLoaderEvent;
+    HANDLE exitSemaphore = masterBusLoaderInfo->exitSemaphore;
     HANDLE waitHandle[] = { startBusLoaderEvent, exitSemaphore};
+
     uint running = 1;
     while(running)
     {
@@ -75,13 +75,14 @@ DWORD WINAPI busLoader(LPVOID parameter)
         {
             case WAIT_OBJECT_0:
             {
-				fillSample(inputBuffer, outputBuffer, iterationCount, loaderCount);
+                WaitForSingleObject(loadOutputEvent, INFINITE);
+                fillSample(inputBuffer, outputBuffer, iterationCount, 1);
 				ReleaseSemaphore(completeSemaphore, 1, 0);
                 break;
             }
             case WAIT_OBJECT_0 + 1:
             {
-                freeSmallMemory(busLoaderInfo);
+                freeSmallMemory(masterBusLoaderInfo);
                 running = 0;
             }
         }
@@ -112,19 +113,18 @@ DWORD WINAPI busProcessor(LPVOID parameter)
 {
     BusProcessorInfo* busProcessorInfo = (BusProcessorInfo*)parameter;
     uint inputLoaderCount = busProcessorInfo->inputLoaderCount;
-	uint outputLoaderCount = busProcessorInfo->outputLoaderCount;
     float* inputBuffer = busProcessorInfo->inputBuffer;
     HANDLE* busLoaderStartEventArray = busProcessorInfo->busLoaderStartEventArray;
+	uint outputLoaderCount = busProcessorInfo->outputLoaderCount;
 
 	uint loadFrameCount = globalState.audioEndpointFrameCount;
 	uint framesPerAVX2 = 32 / 8;
 	uint iterationCount = loadFrameCount / framesPerAVX2;
 
+    uint running = 1;
     HANDLE completeSemaphore = busProcessorInfo->bufferCompleteSemaphore;
     HANDLE exitSemaphore = busProcessorInfo->exitSemaphore;
     HANDLE waitHandle[] = { completeSemaphore, exitSemaphore};
-
-    uint running = 1;
     while(running)
     {
         uint signal = WaitForMultipleObjects(2, waitHandle, 0, INFINITE);
@@ -146,21 +146,23 @@ DWORD WINAPI busProcessor(LPVOID parameter)
     }
 	return 0;
 }
-void startOutputLoader(State* state, WPARAM wParam)
+void startOutputLoader(State* state, WPARAM wParam, LPARAM lParam)
 {
-	BufferInfo* bufferInfo = (BufferInfo*)wParam;
+	BufferInfo* outputBufferInfo = (BufferInfo*)wParam;
+    HANDLE loadOutputEvent = (HANDLE)lParam;
 
-    BusLoaderInfo* busLoaderInfo = {};
-    allocateSmallMemory(sizeof(BusLoaderInfo), (void**)&busLoaderInfo);
-    busLoaderInfo->outputBufferInfo = *bufferInfo;
-    busLoaderInfo->inputBuffer = state->inputBuffer;
-    busLoaderInfo->exitSemaphore = state->exitSemaphore;
+    MasterBusLoaderInfo* masterBusLoaderInfo = {};
+    allocateSmallMemory(sizeof(MasterBusLoaderInfo), (void**)&masterBusLoaderInfo);
+    masterBusLoaderInfo->outputBufferInfo = *outputBufferInfo;
+    masterBusLoaderInfo->inputBuffer = state->inputBuffer;
+    masterBusLoaderInfo->exitSemaphore = state->exitSemaphore;
 
-    uint outputLoaderNumber = state->outputLoaderNumber;
-    busLoaderInfo->startBusLoaderEvent = state->busLoaderStartEventArray[outputLoaderNumber];
-	++state->outputLoaderNumber;
+	uint outputLoaderNumber = state->outputLoaderNumber;
+	masterBusLoaderInfo->startBusLoaderEvent = state->startBusLoaderEvent;
+	
+    masterBusLoaderInfo->loadOutputEvent = loadOutputEvent; 
 
-    createThread(busLoader, busLoaderInfo, 0);
+    createThread(masterBusLoader, masterBusLoaderInfo, 0);
 }
 void createProcessor(State* state)
 {
@@ -168,9 +170,13 @@ void createProcessor(State* state)
     allocateSmallMemory(sizeof(BusProcessorInfo), (void**)&busProcessorInfo);
     
     busProcessorInfo->inputBuffer = state->inputBuffer;
-    busProcessorInfo->busLoaderStartEventArray = state->busLoaderStartEventArray;
+    busProcessorInfo->busLoaderStartEventArray = &state->startBusLoaderEvent;
     busProcessorInfo->outputLoaderCount = state->outputLoaderCount;
-    busProcessorInfo->inputLoaderCount = state->inputLoaderCount;
+
+	void* inputLoaderArrayHandle = state->inputLoaderArrayHandle;
+	uint inputLoaderCount = {};
+	getElementCount(inputLoaderArrayHandle, &inputLoaderCount);
+    busProcessorInfo->inputLoaderCount = inputLoaderCount;
     busProcessorInfo->bufferCompleteSemaphore = state->bufferCompleteSemaphore;
     busProcessorInfo->exitSemaphore = state->exitSemaphore;
 
@@ -178,86 +184,84 @@ void createProcessor(State* state)
 }
 void startInputLoader(State* state)
 {
-    if(state->outputBusCount == 0 || state->inputLoaderCount == 0)
-    {
-        return;
-    }
+	void* inputLoaderArrayHandle = state->inputLoaderArrayHandle;
+    HWND* inputLoaderArray = {};
+    uint inputLoaderCount = {};
+	getArray(inputLoaderArrayHandle, (void**)&inputLoaderArray, &inputLoaderCount);
 
-	BufferInfo bufferInfo = {};
-	bufferInfo.buffer = state->inputBuffer;
-	bufferInfo.bufferCompleteSemaphore = state->bufferCompleteSemaphore;
-	bufferInfo.loaderCount = state->inputLoaderCount;
+	BufferInfo outputBufferInfo = {};
+    outputBufferInfo.buffer = state->inputBuffer;
+    outputBufferInfo.bufferCompleteSemaphore = state->bufferCompleteSemaphore;
+    outputBufferInfo.loaderCount = inputLoaderCount;
 
-    HWND* inputLoaderArray = state->inputLoaderArray;
-    uint inputLoaderCount = state->inputLoaderCount;
     for(uint i = 0; i != inputLoaderCount; ++i)
     {
-		bufferInfo.loaderPosition = i;
-        SendMessage(inputLoaderArray[i], WM_STARTOUTPUTLOADER, (WPARAM)&bufferInfo, 0);
-    }
-}
-void stopProcessor(State* state)
-{
-    uint outputLoaderNumber = state->outputLoaderNumber;
-	if(outputLoaderNumber != 0)
-    {
-		HANDLE exitSemaphore = state->exitSemaphore;
-		ReleaseSemaphore(exitSemaphore, (long)(outputLoaderNumber + 1), 0);
-		waitForSemaphore(exitSemaphore);
-		state->outputLoaderNumber = 0;
-		state->outputLoaderCount = 0;
-		state->inputLoaderCount = 0;
-		state->outputSet = 0;
-		state->inputSet = 0;
-		freeSmallMemory(state->inputBuffer);
+        outputBufferInfo.loaderPosition = i;
+        SendMessage(inputLoaderArray[i], WM_STARTOUTPUTLOADER, (WPARAM)&outputBufferInfo, 0);
     }
 }
 void sendOutputLoader(State* state, HWND window)
 {
-	uint* outputBusArray = state->outputBusArray;
-	uint outputBusCount = state->outputBusCount;
-	HWND parent = GetAncestor(window, GA_PARENT);
-	for (uint i = 0; i != outputBusCount; ++i)
-	{
-		SendMessage(parent, WM_SETINPUTLOADER, (WPARAM)window, outputBusArray[i]);
-	}
+	HWND wasapi = state->wasapi;
+	SendMessage(wasapi, WM_SETINPUTLOADER, (WPARAM)window, 0);
 }
 void setInputLoader(State* state, HWND window, WPARAM wParam)
 {
-	if(state->outputSet == 0)
+	if (state->outputSet == 0)
 	{
 		sendOutputLoader(state, window);
 		state->outputSet = 1;
 	}
-	uint inputLoaderCount = state->inputLoaderCount;
-	state->inputLoaderArray[inputLoaderCount] = (HWND)wParam;
-	++state->inputLoaderCount;
+	HWND inputLoader = (HWND)wParam;
+	void* inputLoaderArrayHandle = state->inputLoaderArrayHandle;
+	arrayAppend(inputLoaderArrayHandle, &inputLoader);
+}
+void stopProcessor(State* state)
+{
+	void* inputLoaderArrayHandle = state->inputLoaderArrayHandle;
+	uint inputLoaderCount = {};
+	getElementCount(inputLoaderArrayHandle, &inputLoaderCount);
+    if(inputLoaderCount != 0)
+    {
+        HANDLE exitSemaphore = state->exitSemaphore;
+        ReleaseSemaphore(exitSemaphore, (long)(1 + 1), 0);
+        waitForSemaphore(exitSemaphore);
+		state->outputLoaderNumber = 0;
+		state->outputLoaderCount = 0;
+		state->outputSet = 0;
+		state->inputSet = 0;
+		freeSmallMemory(state->inputBuffer);
+		resetArray(inputLoaderArrayHandle);
+    }
 }
 void createBuffer(State* state)
 {
-	if(state->inputLoaderCount == 0 || state->outputLoaderCount == 0)
+	void* inputLoaderArrayHandle = state->inputLoaderArrayHandle;
+	uint inputLoaderCount;
+	getElementCount(inputLoaderArrayHandle, &inputLoaderCount);
+	if (inputLoaderCount == 0)
 	{
 		return;
 	}
 
-
 	uint frameCount = globalState.audioEndpointFrameCount;
 	uint channelCount = 2;
 	uint frameSize = sizeof(float) * channelCount;
-	uint loaderCount = state->inputLoaderCount;
+	uint loaderCount = inputLoaderCount;
 	uint64 bufferSize = (uint64)loaderCount * frameCount * frameSize;
 
 	float* bufferStart = {};
 	allocateSmallMemory(bufferSize, (void**)&bufferStart);
 
 	state->inputBuffer = bufferStart;
-
 	createProcessor(state);
 }
 void sendInputLoader(State* state)
 {
-	HWND* inputLoaderArray = state->inputLoaderArray;
-	uint inputLoaderCount = state->inputLoaderCount;
+	void* inputLoaderArrayHandle = state->inputLoaderArrayHandle;
+	HWND* inputLoaderArray = {};
+	uint inputLoaderCount = {};
+	getArray(inputLoaderArrayHandle, (void**)&inputLoaderArray, &inputLoaderCount);
 	for (uint i = 0; i != inputLoaderCount; ++i)
 	{
 		SendMessage(inputLoaderArray[i], WM_SETOUTPUTLOADER, 0, 0);
@@ -265,7 +269,7 @@ void sendInputLoader(State* state)
 }
 void setOutputLoader(State* state)
 {
-	if(state->inputSet == 0)
+	if (state->inputSet == 0)
 	{
 		sendInputLoader(state);
 		state->inputSet = 1;
@@ -284,7 +288,7 @@ LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 		}
         case WM_STARTOUTPUTLOADER:
         {
-            startOutputLoader(state, wParam);
+            startOutputLoader(state, wParam, lParam);
             break;
         }
         case WM_STARTINPUTLOADER:
@@ -312,11 +316,6 @@ LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
             stopProcessor(state);
             break;
         }
-	    case WM_SETINPUT:
-		{
-			//setInput(state, window, wParam);
-			break;
-		}
 	}
 	return DefWindowProc(window, message, wParam, lParam);
 }

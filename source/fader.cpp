@@ -5,7 +5,7 @@ START_SCOPE(fader)
 
 LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 
-void create(HWND parent, HWND* window, WindowPosition* position)
+void create(HWND parent, HWND* window, WindowPosition* position, uint faderId)
 {
 	State* state = {};
 	allocateSmallMemory(sizeof(State), (void**)&state);
@@ -13,7 +13,7 @@ void create(HWND parent, HWND* window, WindowPosition* position)
 	state->position.y = position->y;
 	state->position.width = position->width;
 	state->position.height = position->height;
-	state->parent = parent;
+	state->faderId = faderId;
 
 	createWindowClass(L"faderWindowClass", windowCallback);
 	createChildWindow(L"faderWindowClass", parent, window, state);
@@ -67,9 +67,8 @@ void handleResize(State* state, HWND window, WPARAM wParam)
 	HWND rectangle = state->rectangle;
 	SendMessage(rectangle, WM_RESIZE, 0, 0);
 }
-void handleMouseDrag(State* state, WPARAM wParam, LPARAM lParam)
+void handleMouseDrag(State* state, HWND window, WPARAM wParam, LPARAM lParam)
 {
-	notUsing(state);
 	if(wParam == MK_LBUTTON)
 	{
 		int mouseY = GET_Y_LPARAM(lParam); 
@@ -88,15 +87,13 @@ void handleMouseDrag(State* state, WPARAM wParam, LPARAM lParam)
 			mouseY = lowerLimit;
 		}
 		int y = mouseY - (height / 2);
-		int db = (range / 2) - (y - 16);
-		float dbFloat = (float)db / 10.0f;
-		double exponent = dbFloat / 20.0f;
-
-		float gain = (float)pow(10.0f, exponent);
-		*state->output = _mm256_broadcast_ss(&gain);
+		int faderValue =(-1 * (mouseY - upperLimit)) + (range / 2);
 
 		HWND rectangle = state->rectangle;
 		placeWindow(rectangle, x, y, width, height);
+		HWND parent = GetAncestor(window, GA_PARENT);
+		uint faderId = state->faderId;
+		SendMessage(parent, WM_FADERMOVE, (WPARAM)faderId, faderValue);
 	}
 }
 void setControl(State* state, WPARAM wParam)
@@ -118,7 +115,6 @@ void setControl(State* state, WPARAM wParam)
 	HWND rectangle = state->rectangle;
 	placeWindow(rectangle, x, y, width, height);
 	ShowWindow(rectangle, SW_SHOW);
-	state->output = output;
 }
 LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 {
@@ -142,7 +138,7 @@ LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 		}
 		case WM_MOUSEMOVE:
 		{
-			handleMouseDrag(state, wParam, lParam);
+			handleMouseDrag(state, window, wParam, lParam);
 			break;
 		}
 		case WM_RESIZE:
