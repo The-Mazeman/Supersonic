@@ -1,0 +1,54 @@
+#pragma once
+
+#define START_SCOPE(x) namespace x {
+#define END_SCOPE }
+#define NOT_USING(x) (x);
+#define COLOR_WHITE 0x00ffffff
+#define COLOR_BLACK 0x00000000
+#define COLOR_GREY 0x00333333
+
+#define COLOR_GREEN 0x0000ff00
+#define COLOR_RED   0x000000ff
+
+#ifndef WM_NCUAHDRAWCAPTION
+#define WM_NCUAHDRAWCAPTION (0x00ae)
+#endif
+#ifndef WM_NCUAHDRAWFRAME
+#define WM_NCUAHDRAWFRAME (0x00af)
+#endif
+
+#define WM_RESIZE 0x8001
+#define WM_PLAY 0x8002
+#define WM_PAUSE 0x8003
+#define WM_STARTOUTPUTLOADER 0x8004
+#define WM_FILEDROP 0x8005
+#define WM_CREATEAUDIOTRACK 0x8006
+#define WM_SETOUTPUT 0x8007
+#define WM_MOVECURSOR 0x8008
+#define WM_GETCURSOR 0x8009
+#define WM_SETDROPLOCATION 0x800a
+#define WM_SETCONTROL 0x800b
+#define WM_SETINPUT 0x800c
+#define WM_STARTINPUTLOADER 0x800d
+#define WM_SETTRACKARRAY 0x800e
+#define WM_SETOUTPUTLOADER 0x800f
+#define WM_SETINPUTLOADER 0x8010
+#define WM_SENDINPUTLOADER 0x8011
+#define WM_SENDOUTPUTLOADER 0x8012
+#define WM_CREATEBUFFER 0x8013
+#define WM_SENDCONTROL 0x8014
+#define WM_FADERMOVE 0x8015
+#define WM_CREATECHILD 0x8016
+#define WM_CONTEXTMENUOPTION 0x8017
+#define WM_CHILDSELECT 0x8018
+#define WM_SETSTARTFRAME 0x8019
+#define WM_RESIZETRACKHEIGHT 0x801a
+#define WM_CREATEBUSTRACK 0x801b
+#define WM_PREPARETOPLAY 0x801c
+
+#define AVX2_FRAME_SIZE 32
+
+#pragma warning(disable:5045)
+#pragma warning(disable:4100)
+#pragma warning(disable:4189)
+#pragma warning(disable:5039)

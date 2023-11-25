@@ -1,71 +1,74 @@
-#include "header.h"
-#include "dynamicArray.h"
+#include "include.hpp"
+#include "dynamicArray.hpp"
 
-void createArray(void** arrayHandle, uint slotSize)
+void createDynamicArray(void** arrayHandle, uint16 slotSize)
 {
-	DynamicArray* dynamicArray = {};
-	allocateSmallMemory(sizeof(DynamicArray), (void**)&dynamicArray);
-	dynamicArray->firstElement = 0;
-	dynamicArray->totalSlotCount = 0;
-	dynamicArray->freeSlotCount = 0;
-	dynamicArray->occupiedSlotCount = 0;
-	dynamicArray->slotSize = slotSize;
-	*arrayHandle = dynamicArray;
+    DynamicArray* dynamicArray = {};
+    allocateMemory(sizeof(DynamicArray), (void**)&dynamicArray);
+    dynamicArray->totalSlotCount = 0;
+    dynamicArray->occupiedSlotCount = 0;
+    dynamicArray->freeSlotCount = 0;
+    dynamicArray->slotSize = slotSize;
+    *arrayHandle = (char*)dynamicArray;
 }
-void arrayAppend(void* arrayHandle, void* source)
+void increaseSlotCount(DynamicArray* dynamicArray, uint deltaElementCount)
 {
-	DynamicArray* dynamicArray = (DynamicArray*)arrayHandle;
-	if(dynamicArray->freeSlotCount == 0)
-	{
-		uint newSlotCount = dynamicArray->totalSlotCount + 1;
-		uint slotSize = dynamicArray->slotSize;
-		uint newArraySize = newSlotCount * slotSize;
-		char* newArray = {};
-		allocateSmallMemory(newArraySize, (void**)&newArray);
+    uint totalCount = dynamicArray->totalSlotCount;
+    uint slotSize = dynamicArray->slotSize;
+    uint newCount = totalCount + deltaElementCount;
+    uint newSize = newCount * slotSize;
+    uint oldSize = totalCount * slotSize;
 
-		void* oldArray = dynamicArray->firstElement;
-		if(oldArray)
-		{
-			uint oldArraySize = newArraySize - slotSize;
-			memcpy(newArray, oldArray, oldArraySize);
-			freeSmallMemory(oldArray);
-		}
+    void* newArray = {};
+    allocateMemory(newSize, &newArray);
 
-		dynamicArray->firstElement = newArray;
-		++dynamicArray->totalSlotCount;
-	}
-	uint slotNumber = dynamicArray->occupiedSlotCount;
-	uint slotSize = dynamicArray->slotSize;
-	void* destination = (char*)dynamicArray->firstElement + (slotNumber * slotSize);
-	memcpy(destination, source, slotSize);
-	++dynamicArray->occupiedSlotCount;
+    void* oldArray = dynamicArray->array;
+    memcpy(newArray, oldArray, oldSize);
+    dynamicArray->array = newArray;
+    dynamicArray->totalSlotCount = (uint16)newCount;
+    dynamicArray->freeSlotCount = (uint16)deltaElementCount;
 }
-void getArray(void* arrayHandle, void** firstElement, uint* elementCount)
+void resizeArray(void* arrayHandle, uint deltaElementCount)
 {
-	DynamicArray* dynamicArray = (DynamicArray*)arrayHandle;
-	*firstElement = dynamicArray->firstElement;
-	*elementCount = dynamicArray->occupiedSlotCount;
+    DynamicArray* dynamicArray = (DynamicArray*)arrayHandle;
+    increaseSlotCount(dynamicArray, deltaElementCount);
 }
-void getArrayStart(void* arrayHandle, void** firstElement)
+void appendElement(void* arrayHandle, void* element)
 {
-	DynamicArray* dynamicArray = (DynamicArray*)arrayHandle;
-	*firstElement = dynamicArray->firstElement;
+    DynamicArray* dynamicArray = (DynamicArray*)arrayHandle;
+    uint freeSlotCount = dynamicArray->freeSlotCount;
+    if(freeSlotCount == 0)
+    {
+        increaseSlotCount(dynamicArray, 1);
+    }
+    void* array = dynamicArray->array;
+    uint occupiedSlotCount = dynamicArray->occupiedSlotCount;
+    uint slotSize = dynamicArray->slotSize;
+    void* elementSlot = (char*)array + (occupiedSlotCount * slotSize);
+    memcpy(elementSlot, element, slotSize);
+
+    ++dynamicArray->occupiedSlotCount;
+    --dynamicArray->freeSlotCount;
 }
-void getElementCount(void* arrayHandle, uint* elementCount)
+void getOccupiedSlotCount(void* arrayHandle, uint* slotCount)
 {
-	DynamicArray* dynamicArray = (DynamicArray*)arrayHandle;
-	*elementCount = dynamicArray->occupiedSlotCount;
+    DynamicArray* dynamicArray = (DynamicArray*)arrayHandle;
+    *slotCount = dynamicArray->occupiedSlotCount;
+}
+void getArray(void* arrayHandle, void** array, uint* slotCount)
+{
+    DynamicArray* dynamicArray = (DynamicArray*)arrayHandle;
+    *array = dynamicArray->array;
+    *slotCount = dynamicArray->occupiedSlotCount;
+}
+void getArrayStart(void* arrayHandle, void** array)
+{
+    DynamicArray* dynamicArray = (DynamicArray*)arrayHandle;
+    *array = dynamicArray->array;
 }
 void resetArray(void* arrayHandle)
 {
-	DynamicArray* dynamicArray = (DynamicArray*)arrayHandle;
-	dynamicArray->freeSlotCount = dynamicArray->totalSlotCount;
-	dynamicArray->occupiedSlotCount = 0;
-}
-void freeArray(void* arrayHandle)
-{
-	DynamicArray* dynamicArray = (DynamicArray*)arrayHandle;
-	void* firstElement = dynamicArray->firstElement;
-	freeSmallMemory(firstElement);
-	freeSmallMemory(dynamicArray);
+    DynamicArray* dynamicArray = (DynamicArray*)arrayHandle;
+    dynamicArray->freeSlotCount = dynamicArray->totalSlotCount;
+    dynamicArray->occupiedSlotCount = 0;
 }

@@ -11,7 +11,7 @@ void create(HWND parent, HWND* child)
 	allocateSmallMemory(sizeof(State), (void**)&state);
 
 	state->x = globalState.sidebarWidth;
-	state->y = globalState.topbarHeight;
+	state->y = globalState.topbarHeight;ss
 	state->height = globalState.rulerHeight;
 
 	createWindowClass(L"rulerWindowClass", windowCallback);

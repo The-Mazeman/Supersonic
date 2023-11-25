@@ -1,140 +1,39 @@
-#include "header.h"
-#include "mainWindow.h"
+#include "include.hpp"
+#include "mainWindow.hpp"
+
+#define WINDOW_WIDTH  1280
+#define WINDOW_HEIGHT  720 
 
 START_SCOPE(mainWindow)
+    
+LRESULT CALLBACK windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 
-LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
-
-void setCursor(State* state)
-{
-	HWND timelineCursor;
-	HWND clipArea = state->clipArea;
-	SendMessage(clipArea, WM_GETCURSOR, (WPARAM)&timelineCursor, 0);
-
-	HWND audioEngine = state->audioEngine;
-	SendMessage(audioEngine, WM_SETCURSOR, (WPARAM)timelineCursor, 0);
-}
 void setAttribute(HWND window)
 {
-	SetWindowTheme(window, L"", L"");
-	DragAcceptFiles(window, 1);
+    SetWindowTheme(window, L"", L"");
+    DragAcceptFiles(window, 1);
 }
-void createLayout(State* state, HWND window)
+void create(GlobalState* globalState)
 {
-	topbar::create(window, &state->topbar);
-	ruler::create(window, &state->ruler);
-	clipArea::create(window, &state->clipArea);
-	sidebar::create(window, &state->sidebar);
-}
-void create()
-{
-	State* state = {};
-	allocateSmallMemory(sizeof(State), (void**)&state);
+    int width = WINDOW_WIDTH;
+    int height = WINDOW_HEIGHT;
+    State* state = {};
+    allocateMemory(sizeof(State), (void**)&state);
+    state->globalState = globalState;
+    state->trackCount = 0;
+    state->playing = 0;
 
-	state->playing = 0;
-	state->trackCount = 0;
+    createDynamicArray(&state->audioClipContainerArrayHandle, sizeof(void*));
 
-	HWND window;
+    HWND window;
     createWindowClass(L"mainWindowClass", windowCallback);
-    createWindow(L"mainWindowClass", 0, 0, &window, state);
+    createWindow(L"mainwindowClass", state, &window);
 
 	setAttribute(window);
-	createLayout(state, window);
-
-	audioEngine::create(window, &state->audioEngine);
-	setCursor(state);
-
-	placeWindow(window, 0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
+    SendMessage(window, WM_CREATECHILD, 0, 0);
+    placeWindow(window, 0, 0, width, height);
 }
-LRESULT handleHitTesting(HWND window, LPARAM lParam)
-{
-	int cursorX = GET_X_LPARAM(lParam);
-	int cursorY = GET_Y_LPARAM(lParam);
-
-	int a, b, c, d;
-	getWindowRectangle(window, &a, &b, &c, &d);
-
-	if (cursorY < b + 16)
-	{
-		return HTCAPTION;
-	}
-	if (cursorX < a + 8)
-	{
-		return HTLEFT;
-	}
-	if (cursorX > c - 8)
-	{
-		return HTRIGHT;
-	}
-	if (cursorY > d - 8)
-	{
-		return HTBOTTOM;
-	}
-	return HTCLIENT;
-}
-void handleSizing(WPARAM wParam, LPARAM lParam)
-{
-	RECT* rectangle = {};
-	if (wParam)
-	{
-		NCCALCSIZE_PARAMS* parameter = (NCCALCSIZE_PARAMS*)lParam;
-		rectangle = parameter->rgrc;
-	}
-	else
-	{
-		rectangle = (RECT*)lParam;
-	}
-	rectangle->top -= 1;
-}
-void verticalScroll(State* state, short wheelDelta)
-{
-	HWND sidebar = state->sidebar;
-    ScrollWindowEx(sidebar, 0, wheelDelta, 0, 0, 0, 0, SW_INVALIDATE | SW_SCROLLCHILDREN);
-}
-void handleMouseVerticalWheel(State* state, WPARAM wParam, LPARAM lParam)
-{
-	notUsing(lParam);
-
-	short wheelDelta = GET_WHEEL_DELTA_WPARAM(wParam);
-    if(globalState.offsetY + wheelDelta < 0)
-    {
-        globalState.offsetY += wheelDelta;
-		verticalScroll(state, wheelDelta);
-    }
-}
-void horizontalScroll(State* state, int wheelDelta)
-{
-	HWND ruler = state->ruler;
-    ScrollWindowEx(ruler, wheelDelta, 0, 0, 0, 0, 0, SW_INVALIDATE);
-	HWND clipArea = state->clipArea;
-    ScrollWindowEx(clipArea, wheelDelta, 0, 0, 0, 0, 0, SW_INVALIDATE | SW_SCROLLCHILDREN);
-}
-void handleMouseHorizontalWheel(State* state, WPARAM wParam, LPARAM lParam)
-{
-	notUsing(lParam);
-
-	short wheelDelta = GET_WHEEL_DELTA_WPARAM(wParam);
-    wheelDelta *= -1;
-
-    if(globalState.offsetX + wheelDelta < 0)
-    {
-        globalState.offsetX += wheelDelta;
-        horizontalScroll(state, wheelDelta);
-    }
-}
-void handleSizeChanged(State* state, LPARAM lParam)
-{
-	int width = LOWORD(lParam);
-	int height = HIWORD(lParam);
-
-	POINT dimension = {width, height};
-	HWND* childArray = (HWND*)state;
-	for(uint i = 0; i != 4; ++i)
-	{
-		SendMessage(childArray[i], WM_RESIZE, (WPARAM)&dimension, 0);
-	}
-}
-void paintWindow(HWND window)
+void paint(HWND window)
 {
 	PAINTSTRUCT paintStruct;
 	HDC deviceContext = BeginPaint(window, &paintStruct);
@@ -144,76 +43,194 @@ void paintWindow(HWND window)
 
 	EndPaint(window, &paintStruct);
 }
-void getTrackNumber(HWND window, int* trackNumber)
+LRESULT handleHitTesting(HWND window, LPARAM lParam)
 {
-	POINT cursor;
-	GetCursorPos(&cursor);
-	ScreenToClient(window, &cursor);
+	int cursorX = GET_X_LPARAM(lParam);
+	int cursorY = GET_Y_LPARAM(lParam);
 
-	int cursorY = cursor.y;
-	int trackHeight = globalState.trackHeight;
-	*trackNumber = cursorY / trackHeight;
+	int a, b, c, d;
+	getWindowRectangle(window, &a, &b, &c, &d);
+
+	if(cursorY < b + 16)
+	{
+		return HTCAPTION;
+	}
+	if(cursorX < a + 8)
+	{
+		return HTLEFT;
+	}
+	if(cursorX > c - 8)
+	{
+		return HTRIGHT;
+	}
+	if(cursorY > d - 8)
+	{
+		return HTBOTTOM;
+	}
+	return HTCLIENT;
 }
-void togglePlayback(State* state)
+void createChild(State* state, HWND window)
 {
-	HWND audioEngine = state->audioEngine;
-    if(state->playing)
+    GlobalState* globalState = state->globalState;
+    HWND* titleBar = &state->titleBar; 
+    titleBarWindow::create(globalState, window, titleBar);
+
+    rulerWindow::create(globalState, window, &state->ruler);
+    clipAreaWindow::create(globalState, window, &state->clipArea);
+    sidebarWindow::create(globalState, window, &state->sidebar, state->clipArea);
+}
+void handleSizeChange(State* state, LPARAM lParam)
+{
+    HWND* childWindow = &state->titleBar;
+    for(uint i = 0; i != 4; ++i)
     {
-        SendMessage(audioEngine, WM_PAUSE, state->trackCount, 0);
-        state->playing = 0;
-    }
-    else
-    {
-        SendMessage(audioEngine, WM_PLAY, state->trackCount, 0);
-        state->playing = 1;
+        SendMessage(childWindow[i], WM_RESIZE, 0, lParam);
     }
 }
-void handleKeyboardInput(State* state, WPARAM wParam)
+BOOL CALLBACK resizeAudioClipWindow(HWND window, LPARAM lParam)
 {
-    switch(wParam)
+    SendMessage(window, WM_RESIZE, 0, lParam);
+    return 1;
+}
+void horizontalScroll(State* state, int wheelDelta)
+{
+    int offsetX = (int)state->globalState->offsetX;
+    if(offsetX + wheelDelta < 0)
     {
-        case VK_SPACE:
+        wheelDelta = offsetX * -1; 
+    }
+    HWND ruler = state->ruler;
+    ScrollWindowEx(ruler, -wheelDelta, 0, 0, 0, 0, 0, SW_INVALIDATE);
+
+    HWND clipArea = state->clipArea;
+    ScrollWindowEx(clipArea, -wheelDelta, 0, 0, 0, 0, 0, SW_INVALIDATE | SW_SCROLLCHILDREN);
+
+    offsetX += wheelDelta;
+    state->globalState->offsetX = (uint)offsetX;
+}
+void handleHorizontalScroll(State* state, WPARAM wParam)
+{
+    int wheelDelta = GET_WHEEL_DELTA_WPARAM(wParam);
+    horizontalScroll(state, wheelDelta);
+}
+void handleZoom(State* state, int wheelDelta, LPARAM lParam)
+{
+    int mouseX = GET_X_LPARAM(lParam);
+    POINT mouse = {mouseX, 0};
+    HWND ruler = state->ruler;
+    ScreenToClient(ruler, &mouse);
+
+    int offsetX = (int)state->globalState->offsetX;
+    mouseX = mouse.x + offsetX;
+
+    wheelDelta /= WHEEL_DELTA;
+    int framesPerPixel = (int)state->globalState->framesPerPixel;
+    int scaler = (framesPerPixel / 4) + 2;
+    scaler *= wheelDelta;
+    int newFramesPerPixel = framesPerPixel - scaler;
+    if(newFramesPerPixel < 0)
+    {
+        return;
+
+    }
+    state->globalState->framesPerPixel = (uint)newFramesPerPixel;
+
+    float changeRatio = (float)framesPerPixel / (float)newFramesPerPixel;
+    float newMouseX = changeRatio * (float)mouseX;
+    int deltaOffsetX = (int)newMouseX -  mouseX;
+    horizontalScroll(state, deltaOffsetX);
+
+    offsetX = (int)state->globalState->offsetX;
+
+    HWND clipArea = state->clipArea;
+    POINT value = {newFramesPerPixel, offsetX};
+    EnumChildWindows(clipArea, resizeAudioClipWindow, (LPARAM)&value);
+    SendMessage(clipArea, WM_MOVECURSOR, 0, 0);
+
+    InvalidateRect(ruler, 0, 0);
+    InvalidateRect(clipArea, 0, 0);
+}
+void handleVerticalScroll(State* state, int wheelDelta)
+{
+    int offsetX = (int)state->globalState->offsetX;
+    int offsetY = (int)state->globalState->offsetY;
+
+    if(offsetY - wheelDelta < 0)
+    {
+        wheelDelta  = -offsetY;
+    }
+
+    HWND sidebar = state->sidebar;
+    ScrollWindowEx(sidebar, 0, wheelDelta, 0, 0, 0, 0, SW_INVALIDATE | SW_SCROLLCHILDREN);
+
+    HWND clipArea = state->clipArea;
+    ScrollWindowEx(clipArea, 0, wheelDelta, 0, 0, 0, 0, SW_INVALIDATE | SW_SCROLLCHILDREN);
+    state->globalState->offsetY = (uint)(offsetY - wheelDelta);
+}
+void trackHeightChange(State* state, int wheelDelta)
+{
+    int trackHeight = (int)state->globalState->trackHeight;
+    trackHeight += wheelDelta;
+    state->globalState->trackHeight = (uint)trackHeight;
+
+    HWND sidebarWindow = state->sidebar;
+    SendMessage(sidebarWindow, WM_RESIZETRACKHEIGHT, 0, 0);
+
+    HWND clipAreaWindow = state->clipArea;
+    SendMessage(clipAreaWindow, WM_RESIZETRACKHEIGHT, 0, 0);
+}
+void handleMouseWheel(State* state, WPARAM wParam, LPARAM lParam)
+{
+    int keyState = GET_KEYSTATE_WPARAM(wParam);
+    int wheelDelta = GET_WHEEL_DELTA_WPARAM(wParam);
+
+    switch(keyState)
+    {
+        case 0:
         {
-            togglePlayback(state);
+            handleVerticalScroll(state, wheelDelta);
+            break;
+        }
+        case MK_CONTROL:
+        {
+            handleZoom(state, wheelDelta, lParam);
+            break;
+        }
+        case MK_SHIFT:
+        {
+            trackHeightChange(state, wheelDelta);
+            break;
         }
     }
 }
-void getTrackNumber(State* state, uint* trackNumber)
+void getTrackUnderMouse(HWND window, int offsetY, uint trackHeight, uint* trackNumber)
 {
-    POINT cursor;
-    GetCursorPos(&cursor);
-    ScreenToClient(state->clipArea, &cursor);
-    int number = cursor.y / globalState.trackHeight;
-    *trackNumber = (uint)number;
+    POINT mouse;
+    GetCursorPos(&mouse);
+    ScreenToClient(window, &mouse);
+    int x = mouse.x;
+    SendMessage(window, WM_SETDROPLOCATION, (WPARAM)x, 0);
 
-    uint trackCount = state->trackCount;
-    if(*trackNumber >= trackCount)
-    {
-        *trackNumber = trackCount;
-    }
-} 
-void createTrack(State* state, uint newTrackCount)
+    int y = mouse.y;
+    y += (offsetY * -1);
+    *trackNumber = (int)y / trackHeight;
+}
+void createNewAudioTrack(State* state, uint newTrackCount)
 {
-    uint trackCount = state->trackCount;
+    HWND sidebar = state->sidebar;
+    SendMessage(sidebar, WM_CREATEAUDIOTRACK, newTrackCount, 0);
+
+    HWND clipArea = state->clipArea;
+    SendMessage(clipArea, WM_CREATEAUDIOTRACK, newTrackCount, 0);
+
+    void* audioClipContainerArrayHandle = state->audioClipContainerArrayHandle;
+    resizeArray(audioClipContainerArrayHandle, newTrackCount);
     for(uint i = 0; i != newTrackCount; ++i)
     {
-		HWND audioTrack = {};
-		HWND audioEngine = state->audioEngine;
-        SendMessage(audioEngine, WM_CREATETRACK, trackCount, (LPARAM)&audioTrack);
-
-		HWND sidebar = state->sidebar;
-        SendMessage(sidebar, WM_CREATETRACK, trackCount, (LPARAM)audioTrack);
-		++trackCount;
+        void* audioClipContainer = {};
+        createDynamicArray(&audioClipContainer, sizeof(AudioClip*));
+        appendElement(audioClipContainerArrayHandle, &audioClipContainer);
     }
-    state->trackCount = trackCount;
-}
-void sendAudioClip(State* state, AudioClip* audioClip, uint trackNumber)
-{
-	HWND audioEngine = state->audioEngine;
-    SendMessage(audioEngine, WM_FILEDROP, (WPARAM)audioClip, trackNumber);
-
-	HWND clipArea = state->clipArea;
-    SendMessage(clipArea, WM_FILEDROP, (WPARAM)audioClip, trackNumber);
 }
 void checkExtension(String* filePath, String* extension)
 {
@@ -256,7 +273,7 @@ void getFilePathArray(WPARAM wParam, String** filePathArray, uint* fileCount)
 	getFileCount(wParam, &filePathCount);
 
 	String* filePath;
-	allocateSmallMemory(sizeof(String) * filePathCount, (void**)&filePath);
+	allocateMemory(sizeof(String) * filePathCount, (void**)&filePath);
 	*filePathArray = filePath;
 	const WCHAR* extensionString = L"wav";
 
@@ -266,141 +283,167 @@ void getFilePathArray(WPARAM wParam, String** filePathArray, uint* fileCount)
 	for(uint i = 0; i != filePathCount; ++i)
 	{
 		WCHAR* pathString = {};
-		allocateSmallMemory(sizeof(WCHAR) * 256, (void**)&pathString);
+		allocateMemory(sizeof(WCHAR) * 256, (void**)&pathString);
+
+        uint characterCount = {};
+		getFilePath(wParam, pathString, &characterCount, i);
 
 		filePath->string = pathString;
-		getFilePath(wParam, filePath, i);
+        filePath->characterCount = characterCount; 
 
 		checkExtension(filePath, &extension);
 		if(filePath->characterCount == 0)
 		{
+            freeMemory(pathString);
 			continue;
 		}
+
 		++filePath;
 		++(*fileCount);
 	}
 }
-void getTrackInformation(State* state,uint fileCount, uint* trackNumber, uint* newTrackCount)
-{
-	POINT cursor;
-	GetCursorPos(&cursor);
-	HWND clipArea = state->clipArea;
-	ScreenToClient(clipArea, &cursor);
-	int y = cursor.y;
-	int x = cursor.x;
-	SendMessage(clipArea, WM_SETDROP, (WPARAM)x, 0);
-
-	int trackHeight = globalState.trackHeight;
-	*trackNumber = (uint)(y / trackHeight);
-
-	uint trackCount = globalState.trackCount;
-	if(*trackNumber >= trackCount)
-	{
-		*trackNumber = trackCount;
-	}
-	*newTrackCount = *trackNumber + fileCount - trackCount;
-	globalState.trackCount += *newTrackCount;
-}
-void getStartFrame(int x, uint64* startFrame)
-{
-	sint64 framesPerPixel = globalState.framesPerPixel;
-	*startFrame = (uint64)(x * framesPerPixel);
-}
 void handleFileDrop(State* state, WPARAM wParam)
 {
-	String* filePathArray;
+
+    POINT mouse;
+    GetCursorPos(&mouse);
+
+    HWND clipArea = state->clipArea;
+    ScreenToClient(clipArea, &mouse);
+
+    int x = mouse.x;
+    SendMessage(clipArea, WM_SETDROPLOCATION, (WPARAM)x, 0);
+
+    int offsetX = (int)state->globalState->offsetX;
+    int offsetY = (int)state->globalState->offsetY;
+
+    int y = mouse.y;
+    y += offsetY;
+
+    uint trackHeight = state->globalState->trackHeight;
+    uint trackNumber = (int)y / trackHeight;
+
 	uint fileCount = {};
+    String* filePathArray = {};
 	getFilePathArray(wParam, &filePathArray, &fileCount);
 
-	uint newTrackCount = {};
-	uint trackNumber = {};
-	getTrackInformation(state, fileCount, &trackNumber, &newTrackCount);
+    uint framesPerPixel = state->globalState->framesPerPixel;
+    uint64 startFrame = (x + offsetX) * framesPerPixel; 
+    AudioClip* audioClipArray = {};
+    audioClip::create(filePathArray, startFrame, fileCount, &audioClipArray);
 
-	createTrack(state, newTrackCount);
+    uint trackCount = state->trackCount;
+    if(trackNumber > trackCount)
+    {
+        trackNumber = trackCount;
+    }
+    uint newTrackCount = {};
+    if(trackNumber + fileCount > trackCount)
+    {
+        newTrackCount = (trackNumber + fileCount) - trackCount;
+        createNewAudioTrack(state, newTrackCount);
+    }
 
+    void* audioClipContainerArrayHandle = state->audioClipContainerArrayHandle;
+    void** audioClipContainerArray = {};
+    getArrayStart(audioClipContainerArrayHandle, (void**)&audioClipContainerArray);
     for(uint i = 0; i != fileCount; ++i)
     {
-		WaveFile waveFile = {};
-		char* waveFilePointer = {};
-        waveFile::create(filePathArray[i].string, &waveFile, &waveFilePointer);
-		AudioClip* audioClip = {};
-		waveFile::createAudioClip(&waveFile, &audioClip);
-
-		freeSmallMemory(filePathArray[i].string);
-		freeBigMemory(waveFilePointer);
-        sendAudioClip(state, audioClip, trackNumber);
-        ++trackNumber;
+        SendMessage(clipArea, WM_FILEDROP, (WPARAM)&audioClipArray[i], trackNumber + i);
+        void* audioClipContainer = audioClipContainerArray[trackNumber + i];
+        AudioClip* audioClip = &audioClipArray[i];
+        appendElement(audioClipContainer, &audioClip);
     }
-	freeSmallMemory(filePathArray);
+
+    state->trackCount += newTrackCount;
+    freeMemory(filePathArray);
 }
-void handleMouseLeftClick(State* state)
+void togglePlayback(State* state)
 {
-	HWND clipArea = state->clipArea;
-	POINT cursor;
-	GetCursorPos(&cursor);
-	ScreenToClient(clipArea, &cursor);
-	int cursorX = cursor.x;
-	cursorX -= globalState.offsetX;
-	if(state->playing == 0)
-	{
-		if(cursorX > 0)
-		{
-			SendMessage(clipArea, WM_MOVECURSOR, (uint)cursorX, 0);
-		}
-	}
+    HWND sidebar = state->sidebar;
+    if(state->playing)
+    {
+        state->playing = 0;
+        SendMessage(sidebar, WM_PAUSE, 0, 0);
+    }
+    else
+    {
+        void* audioClipContainerArrayHandle = state->audioClipContainerArrayHandle;
+        SendMessage(sidebar, WM_PLAY, (WPARAM)audioClipContainerArrayHandle, 0);
+        state->playing = 1;
+    }
 }
-LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
+void handleKeyboard(State* state, WPARAM wParam)
 {
-	State* state = (State*)GetProp(window, L"state");
-	switch (message)
-	{
-		case WM_CREATE:
-		{
-            setState(window, lParam);
-			break;
-		}
-		case WM_PAINT:
-		{
-			paintWindow(window);
-			break;
-		}
-		case WM_MOUSEWHEEL:
-		{
-			handleMouseVerticalWheel(state, wParam, lParam);
-			break;
-		}
-		case WM_MOUSEHWHEEL:
-		{
-			handleMouseHorizontalWheel(state, wParam, lParam);
-			break;
-		}
-		case WM_DROPFILES:
-		{
-			handleFileDrop(state, wParam);
-			break;
-		}
-		case WM_KEYDOWN:
-		{
-			handleKeyboardInput(state, wParam);
-			break;
-		}
-		case WM_LBUTTONDOWN:
-		{
-			handleMouseLeftClick(state);
-			break;
-		}
-		case WM_SIZE:
-		{
-			handleSizeChanged(state, lParam);
-			return 0;
-		}
-		case WM_NCCALCSIZE:
+    if(wParam == VK_SPACE)
+    {
+        togglePlayback(state);
+    }
+}
+void createNewBusTrack(State* state, WPARAM wParam)
+{
+    uint newTrackCount = (uint)wParam;
+    HWND sidebar = state->sidebar;
+    SendMessage(sidebar, WM_CREATEBUSTRACK, newTrackCount, 0);
+}
+LRESULT CALLBACK windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
+{
+    State* state = (State*)GetProp(window, L"state");
+    switch(message)
+    {
+        case WM_CREATECHILD:
+        {
+            createChild(state, window);
+            break;
+        }
+        case WM_PAINT:
+        {
+            paint(window);
+            break;
+        }
+        case WM_SIZE:
+        {
+            handleSizeChange(state, lParam);
+            break;
+        }
+        case WM_MOUSEHWHEEL:
+        {
+            handleHorizontalScroll(state, wParam);
+            break;
+        }
+        case WM_MOUSEWHEEL:
+        {
+            handleMouseWheel(state, wParam, lParam);
+            break;
+        }
+        case WM_KEYDOWN:
+        {
+            handleKeyboard(state, wParam);
+            break;
+        }
+        case WM_DROPFILES:
+        {
+            handleFileDrop(state, wParam);
+            break;
+        }
+        case WM_CREATEBUSTRACK:
+        {
+            createNewBusTrack(state, wParam);
+            break;
+        }
+        case WM_CREATEAUDIOTRACK:
+        {
+            createNewAudioTrack(state, (uint)wParam);
+            break;
+        }
+        case WM_NCCALCSIZE:
 		{
 			return 0;
 		}
 		case WM_NCACTIVATE:
 		{
 			lParam = -1;
+            return 0;
 		}
 		case WM_NCPAINT:
 		case WM_SETICON:
@@ -414,9 +457,8 @@ LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 		{
 			return handleHitTesting(window, lParam);
 		}
-	}
-	return DefWindowProc(window, message, wParam, lParam);
+    }
+    return defaultWindowCallback(window, message, wParam, lParam);
 }
-
 
 END_SCOPE
