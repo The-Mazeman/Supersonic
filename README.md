@@ -1,7 +1,6 @@
 # Supersonic
 A minimal DAW. 
-
-![image](https://github.com/The-Mazeman/Supersonic/assets/137559978/066fd57e-0d4e-4195-bbab-0a8c1d90dd6f)
+![image](https://github.com/The-Mazeman/Supersonic/assets/137559978/2e532346-4ed2-4b25-ad36-2bc2702477fd)
 
 Graphics Backend:
 - Win32 GDI (Graphics Device Interface)
@@ -31,9 +30,9 @@ Supported Bit Depths:
 Things Working :-
 - [x] multi-track playback 
 - [x] playback cursor
+- [x] mute and solo for individual tracks
+- [x] volume and panning for individual tracks
       
 To-do :-
 - [ ] change sample-rate according to imported file
-- [ ] mute and solo for individual tracks
-- [ ] volume and panning for individual tracks
 - [ ] plugins
