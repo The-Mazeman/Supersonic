@@ -213,6 +213,14 @@ void placeWindow(HWND window, int x, int y, int width, int height)
 {
     MoveWindow(window, x, y, width, height, 1);
 }
+void placeWindow(HWND window, RECT* boundingBox) 
+{
+    int x = boundingBox->left;
+    int y = boundingBox->top;
+    int width = boundingBox->right;
+    int height = boundingBox->bottom;
+    MoveWindow(window, x, y, width, height, 1);
+}
 void getRect(RECT* rectangle, int* left, int* top, int* right, int* bottom)
 {
 	*left = rectangle->left;

@@ -24,12 +24,13 @@ void paint(State* state, HWND window)
 
 	RECT* invalidRectangle = &paintStruct.rcPaint;
 	rectangleFill(deviceContext, invalidRectangle, COLOR_BLACK);
+    int width, height;
+    getWindowDimension(window, &width, &height);
 
-    int bottom = invalidRectangle->bottom - 1;
 	int left = invalidRectangle->left;
 	int right = invalidRectangle->right;
-    POINT start = {left, bottom};
-    POINT end = {right, bottom};
+    POINT start = {left, height - 1};
+    POINT end = {right, height - 1};
 
     SelectObject(deviceContext, GetStockObject(DC_PEN));
 	SetDCPenColor(deviceContext, COLOR_WHITE);
@@ -62,7 +63,7 @@ void paint(State* state, HWND window)
 
     invalidRectangle->left = leftMarking;
     invalidRectangle->right = rightMarking;
-    invalidRectangle->bottom /= 2;
+    invalidRectangle->bottom = height / 2;
 
     drawGrid(deviceContext, invalidRectangle, spacing, offsetX);
     drawMarking(deviceContext, invalidRectangle, spacing, offsetX, scalar);

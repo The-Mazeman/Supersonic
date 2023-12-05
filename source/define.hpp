@@ -45,6 +45,12 @@
 #define WM_RESIZETRACKHEIGHT 0x801a
 #define WM_CREATEBUSTRACK 0x801b
 #define WM_PREPARETOPLAY 0x801c
+#define WM_PARAMETERCHANGE 0x801d
+#define WM_GETPARAMETERVALUE 0x801e
+#define WM_BUTTONPRESSED 0x801f
+#define WM_GETBUTTONSTATE 0x8020
+#define WM_TOGGLEMUTETRACK 0x8021
+#define WM_TOGGLESOLOTRACK 0x8022
 
 #define AVX2_FRAME_SIZE 32
 
@@ -52,3 +58,4 @@
 #pragma warning(disable:4100)
 #pragma warning(disable:4189)
 #pragma warning(disable:5039)
+#pragma warning(disable:4774)

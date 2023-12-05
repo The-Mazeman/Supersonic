@@ -229,7 +229,9 @@ void handleTimer(State* state, WPARAM wParam)
     uint64 currentPosition = timelineCursorBasePosition + framesElapsed;
 
     uint framesPerPixel = state->globalState->framesPerPixel;
+    int offsetX = (int)state->globalState->offsetX;
     int x = (int)(currentPosition / framesPerPixel);
+    x -= offsetX;
 
     int width, height;
     HWND timelineCursorWindow = state->timelineCursorWindow;

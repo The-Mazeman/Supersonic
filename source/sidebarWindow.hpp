@@ -16,6 +16,8 @@ struct State
     GlobalState* globalState;
 	int x;
 	int y;
+    uint globalSoloState;
+    uint soloTrackCount;
     void* trackHeaderArrayHandle;
     void* audioTrackArrayHandle;
     void* busTrackArrayHandle;

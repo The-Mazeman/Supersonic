@@ -10,6 +10,8 @@ void create(String* trackName, HWND parent, RECT* boundingBox, HWND* window)
     State* state = {};
     allocateMemory(sizeof(State), (void**)&state);
     state->outputSet = 0;
+    state->gainValue = 0;
+    state->panValue = 0;
     state->inputSet = 0;
     state->outputLoaderNumber = 0;
     state->audioClipArrayHandle = 0;
@@ -25,6 +27,8 @@ void create(String* trackName, HWND parent, RECT* boundingBox, HWND* window)
 
     createSemaphore(&state->finishSemaphore);
     createSemaphore(&state->exitSemaphore);
+    createEvent(&state->muteEvent);
+    createEvent(&state->dummyEvent);
 
     int x = boundingBox->left;
     int y = boundingBox->top;
@@ -55,9 +59,29 @@ void createChild(State* state, HWND window, WPARAM wParam)
     height = 16;
 
     RECT boundingBox = {0, 0, width, height};
-    HWND textbox = {};
-    textboxWindow::create(text, &boundingBox, window, &textbox);
-    state->textbox = textbox;
+    textboxWindow::create(text, &boundingBox, window, &state->textbox);
+
+    boundingBox = {0, 16, 8 * 6, 16};
+    Parameter parameter = {0, -40.0f, 12.0f, 0.1f, 0.0f};
+    String format = {(WCHAR*)L"%2.1f dB", 8};
+    labelWindow::create(&parameter, &format, &boundingBox, window, &state->gainParameter);
+
+    boundingBox = {47, 16, 8 * 4 - 2, 16};
+    parameter = {1, 0.0f, 1.0f, 0.01f, 0.5f};
+    format = {(WCHAR*)L"%1.2f", 4};
+    labelWindow::create(&parameter, &format, &boundingBox, window, &state->panParameter);
+
+    boundingBox = {76, 16, 8 * 2 + 2, 16};
+    String buttonText = {(WCHAR*)L"M", 1};
+    buttonWindow::create(&buttonText, 0, &boundingBox, window, &state->muteButton);
+
+    boundingBox = {93, 16, 8 * 2 + 2, 16};
+    buttonText = {(WCHAR*)L"S", 1};
+    buttonWindow::create(&buttonText, 1, &boundingBox, window, &state->soloButton);
+
+    boundingBox = {110, 16, 8 * 2 + 2, 16};
+    buttonText = {(WCHAR*)L"I", 1};
+    buttonWindow::create(&buttonText, 2, &boundingBox, window, &state->inputEnableButton);
 }
 void setOutput(State* state, HWND window)
 {
@@ -259,9 +283,8 @@ void prepareClip(AudioClip* audioClip, uint64 readCursor, uint frameCount, float
 	else
 	{
 		uint64 offset = readCursor - start;
-		uint64 offsetFrameCount = offset * frameCount;
 		uint channelCount = 2;
-		sampleChunk += (channelCount * offsetFrameCount);
+		sampleChunk += (channelCount * offset);
 		*loadCase = 2;
 	}
 	*sample = sampleChunk;
@@ -343,6 +366,41 @@ void fillStartFrame(float** input, float* output, uint startOffsetFrameCount)
 	}
     *input = (float*)inputAVX2;
 }
+void preProcess(float* buffer, uint iterationCount, float gainValue, float panValue)
+{
+    __m256* bufferAVX2 = (__m256*)buffer;
+    float leftGain = gainValue * (1.0f - panValue) * 2.0f;
+    float rightGain = gainValue * panValue * 2.0f;
+    __m256 scalerAVX2 = {};
+    for(uint i = 0; i != 4; ++i)
+    {
+        scalerAVX2.m256_f32[i * 2] = leftGain;
+        scalerAVX2.m256_f32[(i * 2) + 1] = rightGain;
+    }
+	for(uint i = 0; i != iterationCount; ++i)
+	{
+        *bufferAVX2 = _mm256_mul_ps(*bufferAVX2, scalerAVX2);
+        ++bufferAVX2;
+	}
+}
+void setSwitchCase(HANDLE* waitHandle, HANDLE startEvent, uint* loadCase, uint* muteCase)
+{
+    if(waitHandle[1] == startEvent)
+    {
+        if(*loadCase == 2)
+        {
+            *muteCase = 4;
+        }
+        else
+        {
+            *muteCase = *loadCase;
+        }
+    }
+    else
+    {
+        *loadCase = *muteCase;
+    }
+}
 DWORD WINAPI trackProcessor(LPVOID parameter)
 {
 	TrackProcessorInfo* trackProcessorInfo = (TrackProcessorInfo*)parameter;
@@ -365,23 +423,40 @@ DWORD WINAPI trackProcessor(LPVOID parameter)
 
 	float* sample = {};
 	uint loadCase = {};
+    uint muteCase = {};
 	prepareClip(&selectedClip, readCursor, frameCount, &sample, &loadCase);
     readCursor /= frameCount;
 	uint64 startFrame = selectedClip.startFrame / frameCount;
 	uint64 endFrame = (selectedClip.endFrame / frameCount) - 1;
+    float* gainValue = &trackProcessorInfo->gainValue;
+    float* panValue = &trackProcessorInfo->panValue;
 
 	HANDLE startEvent = trackProcessorInfo->startEvent;
 	HANDLE exitSemaphore = trackProcessorInfo->exitSemaphore;
+	HANDLE muteEvent = trackProcessorInfo->muteEvent;
+	HANDLE dummyEvent = trackProcessorInfo->dummyEvent;
+
 	HANDLE* loaderStartEventArray = trackProcessorInfo->loaderStartEventArray;
-	HANDLE waitHandle[] = {startEvent, exitSemaphore};
+	HANDLE waitHandle[] = {muteEvent, startEvent, dummyEvent, exitSemaphore};
 
 	uint running = 1;
 	while(running)
 	{
-		uint signal = WaitForMultipleObjects(2, waitHandle, 0, INFINITE);
+		uint signal = WaitForMultipleObjects(4, waitHandle, 0, INFINITE);
 		switch(signal)
 		{
-			case WAIT_OBJECT_0:
+            case WAIT_OBJECT_0:
+            {
+                --readCursor;
+                setSwitchCase(waitHandle, startEvent, &loadCase, &muteCase);
+
+                HANDLE temp = waitHandle[2];
+                waitHandle[2] = waitHandle[1];
+                waitHandle[1] = temp;
+
+                break;
+            }
+			case WAIT_OBJECT_0 + 1:
 			{	
 				switch(loadCase)
 				{
@@ -399,6 +474,8 @@ DWORD WINAPI trackProcessor(LPVOID parameter)
 					case 2:
 					{	
 						copySample(&sample, inputBuffer, iterationCount);
+                        preProcess(inputBuffer, iterationCount, *gainValue, *panValue);
+
 						//process(audioEffectList, effectCount, sample, iterationCount);
 						checkClipEnd(readCursor, endFrame, &loadCase);
 						break;
@@ -416,7 +493,47 @@ DWORD WINAPI trackProcessor(LPVOID parameter)
 				setEventArray(loaderStartEventArray, loaderCount);
 				break;
 			}
-			case WAIT_OBJECT_0 + 1:
+			case WAIT_OBJECT_0 + 2:
+            {
+                switch(muteCase)
+				{
+					case 0:
+					{
+						fillZero(inputBuffer, iterationCount);
+                        muteCase = 1;
+                        break;
+					} 
+					case 1:
+					{
+						checkStart(startFrame, readCursor, &muteCase);
+						break;
+					}
+					case 2:
+					{	
+                        sample += frameCount * 2;
+						checkClipEnd(readCursor, endFrame, &muteCase);
+						break;
+					}
+                    case 3:
+                    {
+                        selectedClip = {};
+                        chooseClip(clipList, clipCount, &clipNumber, &selectedClip, readCursor);
+                        prepareClip(&selectedClip, readCursor, frameCount, &sample, &muteCase);
+                        startFrame = selectedClip.startFrame / frameCount;
+                        endFrame = (selectedClip.endFrame / frameCount) - 1;
+                        break;
+                    }
+                    case 4:
+                    {
+						fillZero(inputBuffer, iterationCount);
+                        sample += frameCount * 2;
+                        muteCase = 2;
+                    }
+				}
+				setEventArray(loaderStartEventArray, loaderCount);
+                break;
+            }
+			case WAIT_OBJECT_0 + 3:
 			{
 				freeMemory(trackProcessorInfo);
 				running = 0;
@@ -431,10 +548,22 @@ void startProcessor(State* state, WPARAM wParam, LPARAM lParam)
     uint64* tuple = (uint64*)lParam;
     if(state->audioClipArrayHandle)
     {
+        uint muteState = {};
+        SendMessage(state->muteButton, WM_GETBUTTONSTATE, (WPARAM)&muteState, 0);
+        if(muteState)
+        {
+            SetEvent(state->muteEvent);
+        }
+        else
+        {
+            ResetEvent(state->muteEvent);
+        }
         TrackProcessorInfo* trackProcessorInfo = {};
         allocateMemory(sizeof(TrackProcessorInfo), (void**)&trackProcessorInfo);
         trackProcessorInfo->startEvent = (HANDLE)wParam;
         trackProcessorInfo->exitSemaphore = state->exitSemaphore;
+        trackProcessorInfo->muteEvent = state->muteEvent;
+        trackProcessorInfo->dummyEvent = state->dummyEvent;
         trackProcessorInfo->audioClipArrayHandle = state->audioClipArrayHandle;
         trackProcessorInfo->buffer = state->buffer;
 
@@ -446,6 +575,21 @@ void startProcessor(State* state, WPARAM wParam, LPARAM lParam)
         trackProcessorInfo->outputLoaderCount = loaderCount;
         trackProcessorInfo->frameCount = (uint)tuple[1];
         trackProcessorInfo->readCursor = tuple[0];
+
+        float dbValue = {};
+        HWND gainParameter = state->gainParameter;
+        SendMessage(gainParameter, WM_GETPARAMETERVALUE, (WPARAM)&dbValue, 0);
+        float gainValue = {};
+        convertDecibelToGain(dbValue, &gainValue);
+
+        trackProcessorInfo->gainValue = gainValue;
+        state->gainValue = &trackProcessorInfo->gainValue;
+
+        float panValue = {};
+        HWND panParameter = state->panParameter;
+        SendMessage(panParameter, WM_GETPARAMETERVALUE, (WPARAM)&panValue, 0);
+        trackProcessorInfo->panValue = panValue;
+        state->panValue = &trackProcessorInfo->panValue;
 
         createThread(trackProcessor, trackProcessorInfo);
     }
@@ -465,10 +609,96 @@ void stopPlayback(State* state)
     state->inputSet = 0;
     state->outputLoaderNumber = 0;
     state->audioClipArrayHandle = 0;
+    state->gainValue = 0;
+    state->panValue = 0;
 
     void* inputTrackArrayHandle = state->inputTrackArrayHandle;
     resetArray(inputTrackArrayHandle);
     freeMemory(state->buffer);
+}
+void changeGain(State* state, LPARAM lParam)
+{
+    if(state->gainValue)
+    {
+        float* decibel = (float*)lParam;
+        convertDecibelToGain(*decibel, state->gainValue);
+    }
+}
+void changePan(State* state, LPARAM lParam)
+{
+    if(state->panValue)
+    {
+        float* panValue = (float*)lParam;
+        *state->panValue = *panValue;
+    }
+}
+void handleParameterChange(State* state, WPARAM wParam, LPARAM lParam)
+{
+    switch(wParam)
+    {
+        case 0:
+        {
+            changeGain(state, lParam);
+            break;
+        }
+        case 1:
+        {
+            changePan(state, lParam);
+            break;
+        }
+    }
+}
+void handleMuteButton(State* state)
+{
+    SetEvent(state->muteEvent);
+}
+void handleSoloButton(State* state, HWND window, WPARAM wParam)
+{
+    HWND muteButton = state->muteButton;
+    uint buttonState = {};
+    SendMessage(muteButton, WM_GETBUTTONSTATE, (WPARAM)&buttonState, 0);
+    if(buttonState == 1)
+    {
+        SendMessage(muteButton, WM_LBUTTONDOWN, 0, 0);
+    }
+    HWND parent = GetAncestor(window, GA_PARENT);
+    SendMessage(parent, WM_TOGGLESOLOTRACK, wParam, (LPARAM)window);
+}
+void handleButtonPress(State* state, HWND window, WPARAM wParam, LPARAM lParam)
+{
+    switch(lParam)
+    {
+        case 0:
+        {
+            handleMuteButton(state);
+            break;
+        }
+        case 1:
+        {
+            handleSoloButton(state, window, wParam);
+            break;
+        }
+    }
+}
+void toggleMuteTrack(State* state, WPARAM wParam)
+{
+    HWND muteButton = state->muteButton;
+    uint buttonState = {};
+    SendMessage(muteButton, WM_GETBUTTONSTATE, (WPARAM)&buttonState, 0);
+    if(buttonState != wParam)
+    {
+        SendMessage(muteButton, WM_LBUTTONDOWN, 0, 0);
+    }
+}
+void toggleSoloTrack(State* state, WPARAM wParam)
+{
+    HWND soloButton = state->soloButton;
+    uint buttonState = {};
+    SendMessage(soloButton, WM_GETBUTTONSTATE, (WPARAM)&buttonState, 0);
+    if(buttonState != wParam)
+    {
+        SendMessage(soloButton, WM_LBUTTONDOWN, 0, 0);
+    }
 }
 LRESULT CALLBACK windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 {
@@ -508,6 +738,26 @@ LRESULT CALLBACK windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM
         case WM_PAUSE:
         {
             stopPlayback(state);
+            break;
+        }
+        case WM_PARAMETERCHANGE:
+        {
+            handleParameterChange(state, wParam, lParam);
+            break;
+        }
+        case WM_BUTTONPRESSED:
+        {
+            handleButtonPress(state, window, wParam, lParam);
+            break;
+        }
+        case WM_TOGGLEMUTETRACK:
+        {
+            toggleMuteTrack(state, wParam);
+            break;
+        }
+        case WM_TOGGLESOLOTRACK:
+        {
+            toggleSoloTrack(state, wParam);
             break;
         }
         case WM_NCHITTEST:

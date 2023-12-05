@@ -8,6 +8,9 @@
 #include "textboxWindow.hpp"
 #include "audioClip.hpp"
 #include "buffer.hpp"
+#include "labelWindow.hpp"
+#include "audioUtilities.hpp"
+#include "buttonWindow.hpp"
 
 START_SCOPE(trackHeaderWindow)
 
@@ -15,6 +18,13 @@ struct State
 {
     void* audioClipArrayHandle;
     HWND textbox;
+    HWND gainParameter;
+    HWND panParameter;
+    HWND muteButton;
+    HWND soloButton;
+    HWND inputEnableButton;
+    float* gainValue;
+    float* panValue;
     float* buffer;
     void* inputTrackArrayHandle;
     void* outputBusNumberArrayHandle;
@@ -25,11 +35,15 @@ struct State
     uint inputLoaderCount;
     HANDLE finishSemaphore;
     HANDLE exitSemaphore;
+    HANDLE muteEvent;
+    HANDLE dummyEvent;
 };
 struct BusProcessorInfo
 {
     HANDLE finishSemaphore;
     HANDLE exitSemaphore;
+    HANDLE muteEvent;
+    HANDLE dummyEvent;
     float* buffer;
     HANDLE* loaderStartEventArray;
     uint outputLoaderCount;
@@ -39,14 +53,18 @@ struct BusProcessorInfo
 };
 struct TrackProcessorInfo
 {
+    void* audioClipArrayHandle;
+    float* buffer;
     HANDLE startEvent;
     HANDLE exitSemaphore;
-    float* buffer;
+    HANDLE muteEvent;
+    HANDLE dummyEvent;
     HANDLE* loaderStartEventArray;
     uint outputLoaderCount;
     uint frameCount;
     uint64 readCursor;
-    void* audioClipArrayHandle;
+    float gainValue;
+    float panValue;
 };
 
 void create(String* trackName, HWND parent, RECT* boundingBox, HWND* window);

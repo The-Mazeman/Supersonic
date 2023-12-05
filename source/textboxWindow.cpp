@@ -27,18 +27,11 @@ void paintWindow(State* state, HWND window)
 
 	RECT* invalidRectangle = &paintStruct.rcPaint;
 	rectangleFill(deviceContext, invalidRectangle, COLOR_WHITE);
+    int width, height;
+    getWindowDimension(window, &width, &height);
+    *invalidRectangle = {0, 0, width, height};
+    drawText(deviceContext, &state->text, invalidRectangle, COLOR_BLACK);
 
-	HFONT font = CreateFont(15, 0, 0, 0, 0, 0, 0, 0, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
-	SelectObject(deviceContext, font);
-
-	SetTextAlign(deviceContext, TA_LEFT);
-	SetBkMode(deviceContext, TRANSPARENT);
-	SetTextColor(deviceContext, COLOR_BLACK);
-
-	String* text = &state->text;
-	TextOut(deviceContext, 8, 2, text->string, (int)text->characterCount);
-
-	DeleteObject(font);
 	EndPaint(window, &paintStruct);
 }
 LRESULT windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)

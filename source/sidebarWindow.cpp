@@ -12,6 +12,8 @@ void create(GlobalState* globalState, HWND parent, HWND* window, HWND clipAreaWi
     state->globalState = globalState;
 	state->x = 0;
 	state->y = (int)(globalState->titleBarHeight + globalState->rulerHeight);
+    state->globalSoloState = 0;
+    state->soloTrackCount = 0;
 
     createDynamicArray(&state->trackHeaderArrayHandle, sizeof(HWND));
     createDynamicArray(&state->audioTrackArrayHandle, sizeof(HWND));
@@ -42,11 +44,13 @@ void paint(State* state, HWND window)
 
 	RECT* invalidRectangle = &paintStruct.rcPaint;
 	rectangleFill(deviceContext, invalidRectangle, COLOR_BLACK);
+    int width, height;
+    getWindowDimension(window, &width, &height);
 
     int right = invalidRectangle->right - 1;
     int bottom = invalidRectangle->bottom;
-    POINT start = {right, 0};
-    POINT end = {right, bottom};
+    POINT start = {width - 1, 0};
+    POINT end = {width - 1, bottom};
 
     SelectObject(deviceContext, GetStockObject(DC_PEN));
 	SetDCPenColor(deviceContext, COLOR_WHITE);
@@ -246,6 +250,43 @@ void stopPlayback(State* state)
         SendMessage(busTrackArray[i], WM_PAUSE, 0, 0);
     }
 }
+void toggleSoloTrack(State* state, WPARAM wParam, LPARAM lParam)
+{
+    uint globalSoloState = state->globalSoloState;
+    uint soloTrackCount = state->soloTrackCount;
+    uint soloState = (uint)wParam;
+    HWND audioTrack = (HWND)lParam;
+    if(soloState == 1)
+    {
+        ++soloTrackCount;
+    }
+    else
+    {
+        --soloTrackCount;
+    }
+    state->soloTrackCount = soloTrackCount;
+    if(globalSoloState && soloTrackCount > 0)
+    {
+        uint muteState = !soloState;
+        SendMessage(audioTrack, WM_TOGGLEMUTETRACK, muteState, 0);
+        return;
+    }
+    void* audioTrackArrayHandle = state->audioTrackArrayHandle;
+    HWND* audioTrackArray = {};
+    uint audioTrackCount = {};
+    getArray(audioTrackArrayHandle, (void**)&audioTrackArray, &audioTrackCount);
+
+    for(uint i = 0; i != audioTrackCount; ++i)
+    {
+        if(audioTrackArray[i] == audioTrack)
+        {
+            continue;
+        }
+        SendMessage(audioTrackArray[i], WM_TOGGLEMUTETRACK, soloState, 0);
+    }
+    state->globalSoloState = !globalSoloState;
+    
+}
 LRESULT CALLBACK windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 {
     State* state = (State*)GetProp(window, L"state");
@@ -284,6 +325,11 @@ LRESULT CALLBACK windowCallback(HWND window, UINT message, WPARAM wParam, LPARAM
         case WM_CONTEXTMENUOPTION:
         {
             handleContextMenu(state, window, wParam);
+            break;
+        }
+        case WM_TOGGLESOLOTRACK:
+        {
+            toggleSoloTrack(state, wParam, lParam);
             break;
         }
         case WM_PLAY:

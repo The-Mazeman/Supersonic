@@ -31,6 +31,7 @@ LRESULT CALLBACK defaultWindowCallback(HWND window, UINT message, WPARAM wParam,
 
 void setState(HWND window, LPARAM lParam);
 void placeWindow(HWND window, int x, int y, int width, int height);
+void placeWindow(HWND window, RECT* boundingBox);
 void getRect(RECT* rectangle, int* left, int* top, int* right, int* bottom);
 void getWindowRectangle(HWND windowHandle, int* left, int* top, int* right, int* bottom);
 void getWindowDimension(HWND windowHandle, int* width, int* height);

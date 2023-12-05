@@ -28,7 +28,7 @@ void drawGrid(HDC deviceContext, RECT* boundingBox, float spacing, int offsetX)
 	int leftMarking = boundingBox->left;
 	int rightMarking = boundingBox->right;
 
-    int top = boundingBox->top;
+    int top = 0; 
     int bottom = boundingBox->bottom;
 
 	for (int i = leftMarking; i != rightMarking + 1; ++i)
@@ -49,7 +49,7 @@ void drawMarking(HDC deviceContext, RECT* boundingBox, float spacing, int offset
 
 	int leftMarking = boundingBox->left;
 	int rightMarking = boundingBox->right;
-    int top = boundingBox->top;
+    int top = 0;
 
 	WCHAR marking[4] = {};
 	for (int i = leftMarking; i != rightMarking + 1; ++i)
@@ -59,5 +59,18 @@ void drawMarking(HDC deviceContext, RECT* boundingBox, float spacing, int offset
 		int stringLength = (int)wcslen(marking);
 		TextOut(deviceContext, x + 4, top, marking, stringLength);
 	}
+	DeleteObject(font);
+}
+void drawText(HDC deviceContext, String* text, RECT* boundingBox, uint color)
+{
+	HFONT font = CreateFont(14, 0, 0, 0, 0, 0, 0, 0, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
+	SelectObject(deviceContext, font);
+
+	SetBkMode(deviceContext, TRANSPARENT);
+	//SetBkColor(deviceContext, COLOR_GREEN);
+	SetTextColor(deviceContext, color);
+
+	DrawText(deviceContext, text->string, (int)text->characterCount, boundingBox, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
 	DeleteObject(font);
 }

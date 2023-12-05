@@ -231,6 +231,7 @@ void createNewAudioTrack(State* state, uint newTrackCount)
         createDynamicArray(&audioClipContainer, sizeof(AudioClip*));
         appendElement(audioClipContainerArrayHandle, &audioClipContainer);
     }
+    state->trackCount += newTrackCount;
 }
 void checkExtension(String* filePath, String* extension)
 {
@@ -311,9 +312,6 @@ void handleFileDrop(State* state, WPARAM wParam)
     HWND clipArea = state->clipArea;
     ScreenToClient(clipArea, &mouse);
 
-    int x = mouse.x;
-    SendMessage(clipArea, WM_SETDROPLOCATION, (WPARAM)x, 0);
-
     int offsetX = (int)state->globalState->offsetX;
     int offsetY = (int)state->globalState->offsetY;
 
@@ -328,6 +326,7 @@ void handleFileDrop(State* state, WPARAM wParam)
 	getFilePathArray(wParam, &filePathArray, &fileCount);
 
     uint framesPerPixel = state->globalState->framesPerPixel;
+    int x = mouse.x;
     uint64 startFrame = (x + offsetX) * framesPerPixel; 
     AudioClip* audioClipArray = {};
     audioClip::create(filePathArray, startFrame, fileCount, &audioClipArray);
@@ -354,8 +353,6 @@ void handleFileDrop(State* state, WPARAM wParam)
         AudioClip* audioClip = &audioClipArray[i];
         appendElement(audioClipContainer, &audioClip);
     }
-
-    state->trackCount += newTrackCount;
     freeMemory(filePathArray);
 }
 void togglePlayback(State* state)

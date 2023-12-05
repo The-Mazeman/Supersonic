@@ -286,7 +286,6 @@ DWORD WINAPI endpointProcessor(LPVOID parameter)
                 WaitForSingleObject(processorStartEvent, INFINITE);
                 accumulateFrame(buffer, endpointBuffer, iterationCount, inputLoaderCount);
                 //process(inputBuffer, iterationCount, inputLoaderCount);
-                SetEvent(processorFinishEvent);
                 break;
             }
             case WAIT_OBJECT_0 + 1:
@@ -295,6 +294,7 @@ DWORD WINAPI endpointProcessor(LPVOID parameter)
                 running = 0;
             }
         }
+        SetEvent(processorFinishEvent);
     }
 	return 0;
 }
@@ -361,7 +361,7 @@ void startPlayback(State* state, HWND window, WPARAM wParam)
 	SendMessage(clipAreaWindow, WM_PLAY, 0, 0);
 
 	audioClient->lpVtbl->Start(audioClient);
-	//SetTimer(window, 1, 15, 0);
+	SetTimer(window, 1, 15, 0);
 }
 void flushBuffer(State* state)
 {
@@ -395,7 +395,7 @@ void stopPlayback(State* state, HWND window)
     waitForSemaphore(exitSemaphore);
 
 	flushBuffer(state);
-	//KillTimer(window, 1);
+	KillTimer(window, 1);
 
     void* inputTrackArrayHandle = state->inputTrackArrayHandle;
     resetArray(inputTrackArrayHandle);
