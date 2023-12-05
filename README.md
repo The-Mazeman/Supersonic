@@ -36,3 +36,7 @@ Things Working :-
 To-do :-
 - [ ] export
 - [ ] plugins
+- [ ] recording
+- [ ] audio settings
+- [ ] automation
+- [ ] midi
