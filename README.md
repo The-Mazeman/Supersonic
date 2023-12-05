@@ -1,6 +1,6 @@
 # Supersonic
 A minimal DAW. 
-![image](https://github.com/The-Mazeman/Supersonic/assets/137559978/2e532346-4ed2-4b25-ad36-2bc2702477fd)
+![image](https://github.com/The-Mazeman/Supersonic/assets/137559978/fbbbbeb2-201d-4457-a9fd-ba0957506dd3)
 
 Graphics Backend:
 - Win32 GDI (Graphics Device Interface)
