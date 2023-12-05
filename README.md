@@ -34,5 +34,5 @@ Things Working :-
 - [x] volume and panning for individual tracks
       
 To-do :-
-- [ ] change sample-rate according to imported file
+- [ ] export
 - [ ] plugins
