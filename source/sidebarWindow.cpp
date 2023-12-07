@@ -230,16 +230,6 @@ void setOutput(State* state, WPARAM wParam, LPARAM lParam)
 }
 void stopPlayback(State* state)
 {
-    void* audioTrackArrayHandle = state->audioTrackArrayHandle;
-    HWND* audioTrackArray = {};
-    uint audioTrackCount = {};
-    getArray(audioTrackArrayHandle, (void**)&audioTrackArray, &audioTrackCount);
-
-    for(uint i = 0; i != audioTrackCount; ++i)
-    {
-        SendMessage(audioTrackArray[i], WM_PAUSE, 0, 0);
-    }
-
     void* busTrackArrayHandle = state->busTrackArrayHandle;
     HWND* busTrackArray = {};
     uint busTrackCount = {};
@@ -248,6 +238,16 @@ void stopPlayback(State* state)
     for(uint i = 0; i != busTrackCount; ++i)
     {
         SendMessage(busTrackArray[i], WM_PAUSE, 0, 0);
+    }
+
+    void* audioTrackArrayHandle = state->audioTrackArrayHandle;
+    HWND* audioTrackArray = {};
+    uint audioTrackCount = {};
+    getArray(audioTrackArrayHandle, (void**)&audioTrackArray, &audioTrackCount);
+
+    for(uint i = 0; i != audioTrackCount; ++i)
+    {
+        SendMessage(audioTrackArray[i], WM_PAUSE, 0, 0);
     }
 }
 void toggleSoloTrack(State* state, WPARAM wParam, LPARAM lParam)

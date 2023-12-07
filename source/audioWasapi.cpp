@@ -182,6 +182,7 @@ DWORD WINAPI dummyLoader(LPVOID parameter)
             case WAIT_OBJECT_0:
             {
                 loadSilence(renderClient, frameCount);
+                SetEvent(endpointLoaderFinishEvent);
                 break;
             }
             case WAIT_OBJECT_0 + 1:
@@ -190,7 +191,6 @@ DWORD WINAPI dummyLoader(LPVOID parameter)
                 running = 0;
             }
         }
-        SetEvent(endpointLoaderFinishEvent);
     }
     return 0;
 }
@@ -243,6 +243,8 @@ DWORD WINAPI endpointLoader(LPVOID parameter)
             {
                 WaitForSingleObject(processorFinishEvent, INFINITE);
                 loadOutput(renderClient, buffer, iterationCount, frameCount);
+                SetEvent(processorStartEvent);
+                SetEvent(endpointLoaderFinishEvent);
                 break;
             }
             case WAIT_OBJECT_0 + 1:
@@ -251,8 +253,6 @@ DWORD WINAPI endpointLoader(LPVOID parameter)
                 running = 0;
             }
         }
-        SetEvent(processorStartEvent);
-        SetEvent(endpointLoaderFinishEvent);
     }
 	return 0;
 }
@@ -286,6 +286,7 @@ DWORD WINAPI endpointProcessor(LPVOID parameter)
                 WaitForSingleObject(processorStartEvent, INFINITE);
                 accumulateFrame(buffer, endpointBuffer, iterationCount, inputLoaderCount);
                 //process(inputBuffer, iterationCount, inputLoaderCount);
+                SetEvent(processorFinishEvent);
                 break;
             }
             case WAIT_OBJECT_0 + 1:
@@ -294,7 +295,6 @@ DWORD WINAPI endpointProcessor(LPVOID parameter)
                 running = 0;
             }
         }
-        SetEvent(processorFinishEvent);
     }
 	return 0;
 }
@@ -385,10 +385,6 @@ void stopPlayback(State* state, HWND window)
 	if(state->inputLoaderCount)
 	{
         threadCount = 3;
-	    state->inputLoaderCount = 0;
-		freeMemory(state->buffer);
-		freeMemory(state->endpointBuffer);
-        
 	}
     HANDLE exitSemaphore = state->exitSemaphore;
     ReleaseSemaphore(exitSemaphore, threadCount, 0);
@@ -400,6 +396,8 @@ void stopPlayback(State* state, HWND window)
     void* inputTrackArrayHandle = state->inputTrackArrayHandle;
     resetArray(inputTrackArrayHandle);
     state->inputLoaderCount = 0;
+    freeMemory(state->buffer);
+    freeMemory(state->endpointBuffer);
 }
 void handleTimer(State* state)
 {

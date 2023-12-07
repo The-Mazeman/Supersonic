@@ -50,7 +50,7 @@ DWORD WINAPI bufferLoader(LPVOID parameter)
             case WAIT_OBJECT_0:
             {
 				fillSample(inputBuffer, outputBuffer, iterationCount, loaderCount);
-				ReleaseSemaphore(finishSemaphore, 1, 0);
+                ReleaseSemaphore(finishSemaphore, 1, 0);
                 break;
             }
             case WAIT_OBJECT_0 + 1:

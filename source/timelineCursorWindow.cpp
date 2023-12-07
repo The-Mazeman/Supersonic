@@ -19,7 +19,7 @@ void paintWindow(HWND window)
 	HDC deviceContext = BeginPaint(window, &paintStruct);
 
 	RECT* invalidRectangle = &paintStruct.rcPaint;
-	rectangleFill(deviceContext, invalidRectangle, COLOR_RED);
+	rectangleFill(deviceContext, invalidRectangle, COLOR_WHITE);
 
 	EndPaint(window, &paintStruct);
 }
